@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 sdk_types = { git = "https://github.com/nchashch/sdk_types" }
 sdk_authorization_ed25519_dalek = { git = "https://github.com/nchashch/sdk_authorization_ed25519_dalek" }
+# sdk_types = { path = "../../sdk_types" }
+# sdk_authorization_ed25519_dalek = { path = "../../sdk_authorization_ed25519_dalek" }

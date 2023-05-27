@@ -1,6 +1,8 @@
+use anyhow::Result;
 use bitcoin::hashes::Hash;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use fake::Fake;
+use plain_state::State;
 use plain_types::sdk_authorization_ed25519_dalek::{Authorization, Signer};
 use plain_types::*;
 use rand::Rng;
@@ -59,9 +61,21 @@ pub fn random_transaction(num_inputs: usize, num_outputs: usize) -> AuthorizedTr
     }
 }
 
-pub fn random_body(num_transactions: usize, num_coinbase_outputs: usize) -> Body {
+pub fn random_body(
+    env: &heed::Env,
+    state: &State,
+    num_transactions: usize,
+    num_coinbase_outputs: usize,
+) -> Result<Body> {
     const NUM_INPUTS: usize = 2;
     const NUM_OUTPUTS: usize = 2;
+
+    let txn = env.read_txn()?;
+    let mut inputs = vec![];
+    for utxo in state.utxos.iter(&txn)?.take(num_transactions * NUM_INPUTS) {
+        let (outpoint, output) = utxo?;
+        inputs.push(outpoint);
+    }
     let num_spent_utxos = NUM_INPUTS * num_transactions;
     let transactions = (0..num_transactions)
         .map(|_| random_transaction(NUM_INPUTS, NUM_OUTPUTS))
@@ -69,14 +83,43 @@ pub fn random_body(num_transactions: usize, num_coinbase_outputs: usize) -> Body
     let coinbase = (0..num_coinbase_outputs)
         .map(|_| random_output())
         .collect::<Vec<_>>();
-    Body::new(transactions, coinbase)
+    Ok(Body::new(transactions, coinbase))
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let utxos = random_utxos(100);
-    dbg!(utxos);
+    let env = new_env().unwrap();
+    let state = State::new(&env).unwrap();
+    //    const NUM_UTXOS: usize = 90_000_000;
+    //    let mut wtxn = env.write_txn().unwrap();
+    //    for _ in 0..NUM_UTXOS {
+    //        let outpoint = random_outpoint();
+    //        let output = random_output();
+    //        state.add_utxo(&mut wtxn, &outpoint, &output).unwrap();
+    //    }
+    //    wtxn.commit().unwrap();
+
+    const NUM_TRANSACTIONS: usize = 600;
+    const NUM_COINBASE_OUTPUTS: usize = 1;
+    let body = random_body(&env, &state, NUM_TRANSACTIONS, NUM_COINBASE_OUTPUTS).unwrap();
+    c.bench_function("validate_block", |b| {
+        b.iter(|| {
+            let txn = env.read_txn().unwrap();
+            state.validate_body(&txn, black_box(&body)).unwrap();
+        })
+    });
     todo!();
 }
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
+
+fn new_env() -> Result<heed::Env> {
+    let env_path = project_root::get_project_root()?.join("target/bench_state.mdb");
+    // let _ = std::fs::remove_dir_all(&env_path);
+    std::fs::create_dir_all(&env_path).unwrap();
+    let env = heed::EnvOpenOptions::new()
+        .map_size(16 * 1024 * 1024 * 1024) // 16GB
+        .max_dbs(State::NUM_DBS)
+        .open(env_path)?;
+    Ok(env)
+}
