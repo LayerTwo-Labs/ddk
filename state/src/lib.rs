@@ -7,6 +7,7 @@ use plain_types::{sdk_types::OutPoint, *};
 use sdk_types::GetValue as _;
 use std::collections::HashSet;
 
+#[derive(Clone)]
 pub struct State {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output>>,
 }
@@ -16,7 +17,7 @@ impl State {
 
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
         let utxos = env.create_database(Some("utxos"))?;
-        Ok(State { utxos })
+        Ok(Self { utxos })
     }
 
     pub fn fill_transaction(

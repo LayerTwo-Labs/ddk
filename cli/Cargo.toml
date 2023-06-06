@@ -1,0 +1,20 @@
+[package]
+name = "plain_cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plain_types = { path = "../types" }
+plain_wallet = { path = "../wallet" }
+
+sdk_api = { path = "../../sdk_api" }
+ureq-jsonrpc = { git = "https://github.com/nchashch/ureq-jsonrpc" }
+
+clap = { version = "4.3.0", features = ["derive"] }
+serde = { version = "1.0.163", features = ["derive"] }
+thiserror = "1.0.40"
+anyhow = "1.0.71"
+tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
+bincode = "1.3.3"

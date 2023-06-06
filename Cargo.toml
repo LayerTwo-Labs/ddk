@@ -3,8 +3,9 @@
 members = [
 "types",
 "state",
+"archive",
 "node",
 "wallet",
 "net",
-"tui",
+"cli",
 ]
