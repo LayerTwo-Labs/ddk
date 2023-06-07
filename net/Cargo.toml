@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 plain_archive = { path = "../archive" }
 plain_state = { path = "../state" }
+plain_mempool = { path = "../mempool" }
+plain_drivechain = { path = "../drivechain" }
 
 ureq-jsonrpc = { git = "https://github.com/nchashch/ureq-jsonrpc" }
 

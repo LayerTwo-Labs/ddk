@@ -13,7 +13,7 @@ pub type FilledTransaction = sdk_types::FilledTransaction<()>;
 pub type AuthorizedTransaction = sdk_types::AuthorizedTransaction<Authorization, ()>;
 pub type Body = sdk_types::Body<Authorization, ()>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     pub merkle_root: MerkleRoot,
     pub prev_side_hash: BlockHash,

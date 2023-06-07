@@ -1,5 +1,7 @@
+// TODO: Rename Net to Node
+// TODO: Rename Node to Rpc
+
 use anyhow::Result;
-use byteorder::{BigEndian, ByteOrder as _};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use tokio::sync::RwLock;
 
@@ -25,10 +27,17 @@ pub struct Net {
     peer_state: Arc<RwLock<PeerState>>,
     peers: Arc<RwLock<HashMap<SocketAddr, Peer>>>,
 
-    state: plain_state::State,
-    archive: plain_archive::Archive,
+    pub state: plain_state::State,
+    pub archive: plain_archive::Archive,
+    pub mempool: plain_mempool::MemPool,
     env: heed::Env,
 }
+
+// 1. Transactions are collected into a block.
+// 2. Block hash is computed.
+// 3. BMM attempt is made.
+// 4. BMM attempt is successful.
+// 5. Sidechain block is mined, now it is propagated.
 
 pub struct Peer {
     pub state: PeerState,
@@ -56,6 +65,7 @@ impl Net {
             .open(env_path)?;
         let state = plain_state::State::new(&env)?;
         let archive = plain_archive::Archive::new(&env)?;
+        let mempool = plain_mempool::MemPool::new(&env)?;
         Ok(Self {
             peer_state: Arc::new(RwLock::new(PeerState {
                 header_height: 0,
@@ -66,6 +76,7 @@ impl Net {
             peers,
             state,
             archive,
+            mempool,
             env,
         })
     }
@@ -103,6 +114,21 @@ impl Net {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+        });
+
+        let peers = self.peers.clone();
+        let state = self.peer_state.clone();
+        let archive = self.archive.clone();
+        let state = self.state.clone();
+        let env = self.env.clone();
+        tokio::spawn(async move {
+            let host = "localhost";
+            let port = 18443;
+            let drivechain = plain_drivechain::Drivechain::new(host, port);
+            // Collect transactions.
+            // Construct a block.
+            // BMM
+            // Send the block out over the network
         });
         Ok(())
     }
@@ -214,6 +240,8 @@ pub enum Error {
     QuinnRustls(#[from] quinn::crypto::rustls::Error),
     #[error("archive error")]
     Archive(#[from] plain_archive::Error),
+    #[error("mempool error")]
+    MemPool(#[from] plain_mempool::Error),
     #[error("state error")]
     State(#[from] plain_state::Error),
 }

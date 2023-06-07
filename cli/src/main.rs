@@ -1,12 +1,11 @@
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use plain_types::{
     bitcoin::{self, Amount},
     sdk_types::Address,
-    AuthorizedTransaction, Transaction,
 };
 use sdk_api::{
-    node::{node_client::NodeClient, AddPeerRequest, ValidateTransactionRequest},
+    node::{node_client::NodeClient, AddPeerRequest},
     tonic::Request,
 };
 
@@ -25,17 +24,12 @@ async fn main() -> Result<()> {
                 client.add_peer(request).await?;
             }
         },
-    }
-    let transaction = AuthorizedTransaction {
-        authorizations: vec![],
-        transaction: Transaction {
-            inputs: vec![],
-            outputs: vec![],
+        Command::Bmm(bmm) => match bmm {
+            Bmm::Attempt { amount } => println!("attempting BMM with {amount}"),
+            Bmm::Confirm => println!("confirming BMM"),
+            Bmm::Generate { amount } => println!("creating a block with {amount}"),
         },
-    };
-    let transaction = bincode::serialize(&transaction)?;
-    let request = Request::new(ValidateTransactionRequest { transaction });
-    client.validate_transaction(request).await?;
+    }
     Ok(())
 }
 
@@ -62,10 +56,10 @@ pub enum Net {
 pub enum Command {
     #[command(subcommand)]
     Net(Net),
-    /*
     /// Blind merged mining commands.
     #[command(subcommand)]
     Bmm(Bmm),
+    /*
     #[command(subcommand)]
     Wallet(Wallet),
     */
