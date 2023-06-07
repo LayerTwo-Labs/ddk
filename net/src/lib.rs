@@ -30,6 +30,7 @@ pub struct Net {
     pub state: plain_state::State,
     pub archive: plain_archive::Archive,
     pub mempool: plain_mempool::MemPool,
+    pub drivechain: plain_drivechain::Drivechain,
     env: heed::Env,
 }
 
@@ -51,7 +52,7 @@ pub struct PeerState {
 }
 
 impl Net {
-    pub fn new(bind_addr: SocketAddr) -> Result<Self, Error> {
+    pub fn new(bind_addr: SocketAddr, main_host: &str, main_port: u32) -> Result<Self, Error> {
         let (server, _) = make_server_endpoint(bind_addr)?;
         let client = make_client_endpoint("0.0.0.0:0".parse()?)?;
         let peers = Arc::new(RwLock::new(HashMap::new()));
@@ -66,6 +67,7 @@ impl Net {
         let state = plain_state::State::new(&env)?;
         let archive = plain_archive::Archive::new(&env)?;
         let mempool = plain_mempool::MemPool::new(&env)?;
+        let drivechain = plain_drivechain::Drivechain::new(main_host, main_port)?;
         Ok(Self {
             peer_state: Arc::new(RwLock::new(PeerState {
                 header_height: 0,
@@ -77,6 +79,7 @@ impl Net {
             state,
             archive,
             mempool,
+            drivechain,
             env,
         })
     }
@@ -121,10 +124,10 @@ impl Net {
         let archive = self.archive.clone();
         let state = self.state.clone();
         let env = self.env.clone();
+        let drivechain = self.drivechain.clone();
         tokio::spawn(async move {
             let host = "localhost";
             let port = 18443;
-            let drivechain = plain_drivechain::Drivechain::new(host, port);
             // Collect transactions.
             // Construct a block.
             // BMM
@@ -240,6 +243,8 @@ pub enum Error {
     QuinnRustls(#[from] quinn::crypto::rustls::Error),
     #[error("archive error")]
     Archive(#[from] plain_archive::Error),
+    #[error("drivechain error")]
+    Drivechain(#[from] plain_drivechain::Error),
     #[error("mempool error")]
     MemPool(#[from] plain_mempool::Error),
     #[error("state error")]

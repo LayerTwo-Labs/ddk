@@ -14,6 +14,7 @@ use tokio::sync::Mutex;
 const BLOCK_SIZE_LIMIT: usize = 100 * 1024;
 const THIS_SIDECHAIN: usize = 0;
 
+#[derive(Clone)]
 pub struct Drivechain {
     client: HttpClient,
     block: Arc<Mutex<Option<(Header, Body)>>>,

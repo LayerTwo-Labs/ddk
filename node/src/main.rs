@@ -33,7 +33,9 @@ impl PlainNode {
             .open(env_path)?;
         let state = plain_state::State::new(&env)?;
         let archive = plain_archive::Archive::new(&env)?;
-        let net = plain_net::Net::new(bind_addr)?;
+        let main_host = "127.0.0.1";
+        let main_port = 18443;
+        let net = plain_net::Net::new(bind_addr, main_host, main_port)?;
         Ok(Self {
             env,
             state,
