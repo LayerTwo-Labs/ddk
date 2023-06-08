@@ -6,6 +6,7 @@ members = [
 "archive",
 "api",
 "wallet",
+"miner",
 "net",
 "cli",
 "drivechain",

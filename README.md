@@ -1,8 +1,15 @@
 # Crates in the workspace
 - `cli` -- executable CLI for interacting with the node.
-- `node` -- executable node providing a gRPC interface.
+- `node` -- a node that integrates all of the components together.
+- `main` -- executable entry point.
 - `net` -- networking code.
+- `api` -- implementation of gRPC api.
 - `state` -- validation rules and state transition rules.
 - `archive` -- storage for historical block data.
+- `mempool` -- storage for not yet included transactions.
 - `types` -- types specific to this sidechain.
 - `wallet` -- library for implementing a software HDKD wallet.
+- `miner` -- library for blind merge mining.
+- `drivechain` -- implementation of BIP300 blind merge mining verification and
+  BIP301 deposit and withdrawal verification.
+
