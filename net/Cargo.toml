@@ -11,10 +11,6 @@ plain_state = { path = "../state" }
 plain_mempool = { path = "../mempool" }
 plain_drivechain = { path = "../drivechain" }
 
-ureq-jsonrpc = { git = "https://github.com/nchashch/ureq-jsonrpc" }
-
-heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
-
 quinn = "0.10.1"
 rustls = { version = "0.21.1", features = ["dangerous_configuration"] }
 serde = { version = "1.0.163", features = ["derive"] }
@@ -24,4 +20,3 @@ anyhow = "1.0.71"
 tokio = "1.28.2"
 byteorder = "1.4.3"
 bytes = "1.4.0"
-project-root = "0.2.2"

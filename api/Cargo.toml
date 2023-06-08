@@ -1,0 +1,19 @@
+[package]
+name = "plain_api"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plain_node = { path = "../node" }
+
+# sdk_api = { git = "https://github.com/nchashch/sdk_api" }
+sdk_api = { path = "../../sdk_api" }
+
+tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread"] }
+bincode = "1.3.3"
+anyhow = "1.0.71"
+thiserror = "1.0.40"
+project-root = "0.2.2"
+clap = { version = "4.3.0", features = ["derive"] }

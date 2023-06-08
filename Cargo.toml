@@ -4,10 +4,12 @@ members = [
 "types",
 "state",
 "archive",
-"node",
+"api",
 "wallet",
 "net",
 "cli",
 "drivechain",
 "mempool",
+"node",
+"main",
 ]

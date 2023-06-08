@@ -1,6 +1,3 @@
-// TODO: Rename Net to Node
-// TODO: Rename Node to Rpc
-
 use anyhow::Result;
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use tokio::sync::RwLock;
@@ -21,24 +18,13 @@ use std::{net::SocketAddr, sync::Arc};
 // 1. Download headers
 // 2. Download blocks
 // 3. Update the state
+#[derive(Clone)]
 pub struct Net {
-    client: Endpoint,
-    server: Endpoint,
-    peer_state: Arc<RwLock<PeerState>>,
-    peers: Arc<RwLock<HashMap<SocketAddr, Peer>>>,
-
-    pub state: plain_state::State,
-    pub archive: plain_archive::Archive,
-    pub mempool: plain_mempool::MemPool,
-    pub drivechain: plain_drivechain::Drivechain,
-    env: heed::Env,
+    pub client: Endpoint,
+    pub server: Endpoint,
+    pub peer_state: Arc<RwLock<PeerState>>,
+    pub peers: Arc<RwLock<HashMap<SocketAddr, Peer>>>,
 }
-
-// 1. Transactions are collected into a block.
-// 2. Block hash is computed.
-// 3. BMM attempt is made.
-// 4. BMM attempt is successful.
-// 5. Sidechain block is mined, now it is propagated.
 
 pub struct Peer {
     pub state: PeerState,
@@ -51,91 +37,28 @@ pub struct PeerState {
     pub block_height: u32,
 }
 
+impl Default for PeerState {
+    fn default() -> Self {
+        Self {
+            header_height: 0,
+            block_height: 0,
+        }
+    }
+}
+
 impl Net {
-    pub fn new(bind_addr: SocketAddr, main_host: &str, main_port: u32) -> Result<Self, Error> {
+    pub fn new(bind_addr: SocketAddr) -> Result<Self, Error> {
         let (server, _) = make_server_endpoint(bind_addr)?;
         let client = make_client_endpoint("0.0.0.0:0".parse()?)?;
         let peers = Arc::new(RwLock::new(HashMap::new()));
-
-        let env_path = project_root::get_project_root()?.join("target/net.mdb");
-        let _ = std::fs::remove_dir_all(&env_path);
-        std::fs::create_dir_all(&env_path)?;
-        let env = heed::EnvOpenOptions::new()
-            .map_size(10 * 1024 * 1024) // 10MB
-            .max_dbs(plain_state::State::NUM_DBS + plain_archive::Archive::NUM_DBS)
-            .open(env_path)?;
-        let state = plain_state::State::new(&env)?;
-        let archive = plain_archive::Archive::new(&env)?;
-        let mempool = plain_mempool::MemPool::new(&env)?;
-        let drivechain = plain_drivechain::Drivechain::new(main_host, main_port)?;
-        Ok(Self {
-            peer_state: Arc::new(RwLock::new(PeerState {
-                header_height: 0,
-                block_height: 0,
-            })),
+        let peer_state = Arc::new(RwLock::new(PeerState::default()));
+        Ok(Net {
             server,
             client,
             peers,
-            state,
-            archive,
-            mempool,
-            drivechain,
-            env,
+            peer_state,
         })
     }
-
-    pub fn run(&mut self) -> Result<(), Error> {
-        let endpoint = self.server.clone();
-        let peers = self.peers.clone();
-        tokio::spawn(async move {
-            loop {
-                let incoming_conn = endpoint.accept().await.unwrap();
-                let connection = incoming_conn.await.unwrap();
-                println!(
-                    "[server] connection accepted: addr={}",
-                    connection.remote_address()
-                );
-                let peer = Peer {
-                    state: PeerState {
-                        header_height: 0,
-                        block_height: 0,
-                    },
-                    connection,
-                };
-                peers
-                    .write()
-                    .await
-                    .insert(peer.connection.remote_address(), peer);
-            }
-        });
-        let peers = self.peers.clone();
-        let state = self.peer_state.clone();
-        let archive = self.archive.clone();
-        let state = self.state.clone();
-        let env = self.env.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        });
-
-        let peers = self.peers.clone();
-        let state = self.peer_state.clone();
-        let archive = self.archive.clone();
-        let state = self.state.clone();
-        let env = self.env.clone();
-        let drivechain = self.drivechain.clone();
-        tokio::spawn(async move {
-            let host = "localhost";
-            let port = 18443;
-            // Collect transactions.
-            // Construct a block.
-            // BMM
-            // Send the block out over the network
-        });
-        Ok(())
-    }
-
     pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error> {
         let connection = self.client.connect(addr, "localhost")?.await?;
         let peer = Peer {
@@ -225,8 +148,6 @@ fn configure_client() -> ClientConfig {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("heed error")]
-    Heed(#[from] heed::Error),
     #[error("address parse error")]
     AddrParse(#[from] std::net::AddrParseError),
     #[error("quinn error")]

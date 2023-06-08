@@ -6,17 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plain_state = { path = "../state" }
-plain_types = { path = "../types" }
 plain_net = { path = "../net" }
 plain_archive = { path = "../archive" }
+plain_state = { path = "../state" }
+plain_mempool = { path = "../mempool" }
+plain_drivechain = { path = "../drivechain" }
 
-# sdk_api = { git = "https://github.com/nchashch/sdk_api" }
-sdk_api = { path = "../../sdk_api" }
-
-tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread"] }
-bincode = "1.3.3"
-anyhow = "1.0.71"
+heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 thiserror = "1.0.40"
 project-root = "0.2.2"
-clap = { version = "4.3.0", features = ["derive"] }
+tokio = { version = "1.28.2", features = ["sync"] }
