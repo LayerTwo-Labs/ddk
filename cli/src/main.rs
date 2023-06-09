@@ -1,11 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use plain_miner::Miner;
 use plain_types::{
-    bitcoin::{self, Amount},
-    sdk_types::Address,
+    bitcoin::{self, hashes::Hash, Amount},
+    sdk_types,
+    sdk_types::{Address, BlockHash},
+    Body, Header,
 };
 use sdk_api::{
-    node::{node_client::NodeClient, AddPeerRequest},
+    node::{node_client::NodeClient, *},
     tonic::Request,
 };
 
@@ -15,6 +18,7 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
     let port = args.port.unwrap_or(DEFAULT_RPC_PORT);
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
+    let mut miner = Miner::new(0, "localhost", 18443)?;
 
     match args.command {
         Command::Net(net) => match net {
@@ -24,8 +28,71 @@ async fn main() -> Result<()> {
                 client.add_peer(request).await?;
             }
         },
+        Command::Chain(chain) => match chain {
+            Chain::Besthash => {
+                let best_hash = {
+                    let response = client
+                        .get_best_hash(Request::new(GetBestHashRequest {}))
+                        .await?
+                        .into_inner();
+                    let hash: [u8; 32] = response.best_hash.try_into().unwrap();
+                    BlockHash::from(hash)
+                };
+                println!("{best_hash}");
+            }
+            Chain::Height => {
+                let block_count = client
+                    .get_chain_height(Request::new(GetChainHeightRequest {}))
+                    .await?
+                    .into_inner()
+                    .block_count;
+                println!("{block_count}");
+            }
+        },
         Command::Bmm(bmm) => match bmm {
-            Bmm::Attempt { amount } => println!("attempting BMM with {amount}"),
+            Bmm::Attempt { amount } => {
+                println!("attempting BMM with {amount}");
+                let request = Request::new(GetTransactionsRequest {});
+                let transactions = client.get_transactions(request).await?;
+                let transactions: Vec<_> = transactions
+                    .into_inner()
+                    .transactions
+                    .iter()
+                    .map(Vec::as_slice)
+                    .map(bincode::deserialize)
+                    .collect::<Result<_, _>>()?;
+                let coinbase = vec![];
+                let body = Body::new(transactions, coinbase);
+                let prev_side_hash = {
+                    let response = client
+                        .get_best_hash(Request::new(GetBestHashRequest {}))
+                        .await?
+                        .into_inner();
+                    let hash: [u8; 32] = response.best_hash.try_into().unwrap();
+                    BlockHash::from(hash)
+                };
+                let prev_main_hash = miner.drivechain.get_mainchain_tip().await?;
+                let header = Header {
+                    merkle_root: body.compute_merkle_root(),
+                    prev_side_hash,
+                    prev_main_hash,
+                };
+                miner.attempt_bmm(amount.to_sat(), 0, header, body).await?;
+                loop {
+                    if let Some((header, body)) = miner.confirm_bmm().await.unwrap_or_else(|err| {
+                        // dbg!(err);
+                        None
+                    }) {
+                        let header = bincode::serialize(&header)?;
+                        let body = bincode::serialize(&body)?;
+                        client
+                            .submit_block(Request::new(SubmitBlockRequest { header, body }))
+                            .await?;
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
             Bmm::Confirm => println!("confirming BMM"),
             Bmm::Generate { amount } => println!("creating a block with {amount}"),
         },
@@ -59,6 +126,9 @@ pub enum Command {
     /// Blind merged mining commands.
     #[command(subcommand)]
     Bmm(Bmm),
+    /// Block chain commands.
+    #[command(subcommand)]
+    Chain(Chain),
     /*
     #[command(subcommand)]
     Wallet(Wallet),
@@ -76,6 +146,14 @@ pub enum Wallet {
         #[arg(value_parser = btc_amount_parser)]
         fee: Amount,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Chain {
+    /// Get best block hash.
+    Besthash,
+    /// Get chain height.
+    Height,
 }
 
 #[derive(Debug, Subcommand)]

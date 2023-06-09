@@ -8,9 +8,9 @@ edition = "2021"
 [dependencies]
 plain_types = { path = "../types" }
 plain_wallet = { path = "../wallet" }
+plain_miner = { path = "../miner" }
 
 sdk_api = { path = "../../sdk_api" }
-ureq-jsonrpc = { git = "https://github.com/nchashch/ureq-jsonrpc" }
 
 clap = { version = "4.3.0", features = ["derive"] }
 serde = { version = "1.0.163", features = ["derive"] }

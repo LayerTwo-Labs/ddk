@@ -13,12 +13,12 @@ async fn main() -> Result<()> {
     let net_port = args.netport.unwrap_or(DEFAULT_NET_PORT);
     let rpc_addr = format!("[::1]:{rpc_port}").parse()?;
     let net_addr: SocketAddr = format!("127.0.0.1:{net_port}").parse()?;
-    dbg!(rpc_addr);
-    dbg!(net_addr);
-    let node = plain_api::PlainNode::new()?;
+    let node = plain_node::Node::new(net_addr, "localhost", 18443)?;
+    let api = plain_api::PlainApi::new(node.clone());
+    println!("RPC server is running on {rpc_addr}");
 
     Server::builder()
-        .add_service(NodeServer::new(node))
+        .add_service(NodeServer::new(api))
         .serve(rpc_addr)
         .await?;
 

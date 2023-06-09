@@ -1,12 +1,13 @@
 use std::{net::SocketAddr, sync::Arc};
 
+#[derive(Clone)]
 pub struct Node {
     pub net: plain_net::Net,
     pub state: plain_state::State,
     pub archive: plain_archive::Archive,
     pub mempool: plain_mempool::MemPool,
     pub drivechain: plain_drivechain::Drivechain,
-    env: heed::Env,
+    pub env: heed::Env,
 }
 
 // 1. Transactions are collected into a block.
@@ -31,7 +32,8 @@ impl Node {
         let state = plain_state::State::new(&env)?;
         let archive = plain_archive::Archive::new(&env)?;
         let mempool = plain_mempool::MemPool::new(&env)?;
-        let drivechain = plain_drivechain::Drivechain::new(main_host, main_port)?;
+        const THIS_SIDECHAIN: u32 = 0;
+        let drivechain = plain_drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
         let net = plain_net::Net::new(bind_addr)?;
         Ok(Self {
             net,

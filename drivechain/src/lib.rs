@@ -1,62 +1,19 @@
 mod client;
 use base64::Engine as _;
-use bitcoin::hashes::Hash as _;
 use bitcoin::util::psbt::serialize::{Deserialize, Serialize};
-use client::MainClient;
+pub use client::MainClient;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use plain_types::*;
 use sdk_types::{bs58, Address, Content, OutPoint};
 use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-const BLOCK_SIZE_LIMIT: usize = 100 * 1024;
-const THIS_SIDECHAIN: usize = 0;
 
 #[derive(Clone)]
 pub struct Drivechain {
-    client: HttpClient,
-    block: Arc<Mutex<Option<(Header, Body)>>>,
+    pub sidechain_number: u32,
+    pub client: HttpClient,
 }
 
 impl Drivechain {
-    pub async fn attempt_bmm(
-        &self,
-        amount: u64,
-        height: u32,
-        header: Header,
-        body: Body,
-    ) -> Result<(), Error> {
-        let str_hash_prev = header.prev_main_hash.to_string();
-        let critical_hash: [u8; 32] = header.hash().into();
-        let critical_hash = bitcoin::BlockHash::from_inner(critical_hash);
-        let value = self
-            .client
-            .createbmmcriticaldatatx(
-                bitcoin::Amount::from_sat(amount).into(),
-                height,
-                &critical_hash,
-                THIS_SIDECHAIN,
-                &str_hash_prev[str_hash_prev.len() - 8..],
-            )
-            .await?;
-        let txid = bitcoin::Txid::from_str(value["txid"]["txid"].as_str().unwrap())?;
-        assert_eq!(header.merkle_root, body.compute_merkle_root());
-        *self.block.lock().await = Some((header, body));
-        Ok(())
-    }
-
-    pub async fn confirm_bmm(&self) -> Result<Option<(Header, Body)>, Error> {
-        let mut block = self.block.lock().await;
-        if let Some((header, body)) = block.clone() {
-            self.verify_bmm(&header).await?;
-            *block = None;
-            return Ok(Some((header, body)));
-        }
-        Ok(None)
-    }
-
     pub async fn verify_bmm(&self, header: &Header) -> Result<(), Error> {
         let prev_main_hash = header.prev_main_hash;
         let block_hash = self
@@ -65,9 +22,8 @@ impl Drivechain {
             .await?
             .nextblockhash
             .ok_or(Error::NoNextBlock { prev_main_hash })?;
-        let value = self
-            .client
-            .verifybmm(&block_hash, &header.hash().into(), THIS_SIDECHAIN)
+        self.client
+            .verifybmm(&block_hash, &header.hash().into(), self.sidechain_number)
             .await?;
         Ok(())
     }
@@ -98,7 +54,7 @@ impl Drivechain {
         let rawtx = transaction.serialize();
         let rawtx = hex::encode(&rawtx);
         self.client
-            .receivewithdrawalbundle(THIS_SIDECHAIN, &rawtx)
+            .receivewithdrawalbundle(self.sidechain_number, &rawtx)
             .await?;
         Ok(())
     }
@@ -110,7 +66,7 @@ impl Drivechain {
     ) -> Result<(HashMap<OutPoint, Output>, Option<bitcoin::BlockHash>), Error> {
         let deposits = self
             .client
-            .listsidechaindepositsbyblock(THIS_SIDECHAIN, Some(end), start)
+            .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
             .await?;
         let mut last_block_hash = None;
         let mut last_total = 0;
@@ -148,7 +104,7 @@ impl Drivechain {
     ) -> Result<HashMap<bitcoin::Txid, WithdrawalBundleStatus>, Error> {
         let mut statuses = HashMap::new();
         for spent in &self.client.listspentwithdrawals().await? {
-            if spent.nsidechain == THIS_SIDECHAIN {
+            if spent.nsidechain == self.sidechain_number {
                 statuses.insert(spent.hash, WithdrawalBundleStatus::Confirmed);
             }
         }
@@ -158,7 +114,7 @@ impl Drivechain {
         Ok(statuses)
     }
 
-    pub fn new(host: &str, port: u32) -> Result<Self, Error> {
+    pub fn new(sidechain_number: u32, host: &str, port: u32) -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         let auth = format!("{}:{}", "user", "password");
         let header_value = format!(
@@ -172,8 +128,8 @@ impl Drivechain {
             // http://localhost:18443
             .build(format!("http://{host}:{port}"))?;
         Ok(Drivechain {
+            sidechain_number,
             client,
-            block: Arc::new(Mutex::new(None)),
         })
     }
 }

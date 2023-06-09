@@ -20,7 +20,27 @@ impl State {
         Ok(Self { utxos })
     }
 
-    pub fn fill_transaction(
+    pub fn validate_transaction(
+        &self,
+        txn: &RoTxn,
+        transaction: &AuthorizedTransaction,
+    ) -> Result<u64, Error> {
+        let filled_transaction = self.fill_transaction(txn, &transaction.transaction)?;
+        for (authorization, spent_utxo) in transaction
+            .authorizations
+            .iter()
+            .zip(filled_transaction.spent_utxos.iter())
+        {
+            if sdk_types::Address::from(authorization.public_key.to_bytes()) != spent_utxo.address {
+                return Err(Error::WrongPubKeyForAddress);
+            }
+        }
+        sdk_authorization_ed25519_dalek::verify_authorized_transaction(&transaction)?;
+        let fee = self.validate_filled_transaction(&filled_transaction)?;
+        Ok(fee)
+    }
+
+    fn fill_transaction(
         &self,
         txn: &RoTxn,
         transaction: &Transaction,
@@ -39,10 +59,7 @@ impl State {
         })
     }
 
-    pub fn validate_filled_transaction(
-        &self,
-        transaction: &FilledTransaction,
-    ) -> Result<u64, Error> {
+    fn validate_filled_transaction(&self, transaction: &FilledTransaction) -> Result<u64, Error> {
         let mut value_in: u64 = 0;
         let mut value_out: u64 = 0;
         for utxo in &transaction.spent_utxos {
@@ -57,27 +74,39 @@ impl State {
         Ok(value_in - value_out)
     }
 
-    pub fn validate_body(&self, txn: &RoTxn, body: &Body) -> Result<(), Error> {
+    pub fn validate_body(&self, txn: &RoTxn, body: &Body) -> Result<u64, Error> {
         let mut coinbase_value: u64 = 0;
         for output in &body.coinbase {
             coinbase_value += output.get_value();
         }
         let mut total_fees: u64 = 0;
         let mut spent_utxos = HashSet::new();
-        for transaction in &body.transactions {
-            for input in &transaction.inputs {
+        let filled_transactions: Vec<_> = body
+            .transactions
+            .iter()
+            .map(|t| self.fill_transaction(txn, t))
+            .collect::<Result<_, _>>()?;
+        for filled_transaction in &filled_transactions {
+            for input in &filled_transaction.transaction.inputs {
                 if spent_utxos.contains(input) {
                     return Err(Error::UtxoDoubleSpent);
                 }
                 spent_utxos.insert(*input);
             }
-            let transaction = self.fill_transaction(txn, transaction)?;
-            total_fees += self.validate_filled_transaction(&transaction)?;
+            total_fees += self.validate_filled_transaction(filled_transaction)?;
         }
         if coinbase_value > total_fees {
             return Err(Error::NotEnoughFees);
         }
-        Ok(())
+        let spent_utxos = filled_transactions
+            .iter()
+            .flat_map(|t| t.spent_utxos.iter());
+        for (authorization, spent_utxo) in body.authorizations.iter().zip(spent_utxos) {
+            if sdk_types::Address::from(authorization.public_key.to_bytes()) != spent_utxo.address {
+                return Err(Error::WrongPubKeyForAddress);
+            }
+        }
+        Ok(total_fees)
     }
 
     pub fn connect_body(&self, txn: &mut RwTxn, body: &Body) -> Result<(), Error> {
@@ -123,4 +152,6 @@ pub enum Error {
     NotEnoughFees,
     #[error("utxo double spent")]
     UtxoDoubleSpent,
+    #[error("wrong public key for address")]
+    WrongPubKeyForAddress,
 }

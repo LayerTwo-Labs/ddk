@@ -2,6 +2,7 @@ use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::{sdk_types::Txid, AuthorizedTransaction};
 
+#[derive(Clone)]
 pub struct MemPool {
     pub transactions: Database<OwnedType<[u8; 32]>, SerdeBincode<AuthorizedTransaction>>,
 }
