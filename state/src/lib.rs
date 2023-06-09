@@ -2,22 +2,36 @@
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::{sdk_authorization_ed25519_dalek, sdk_types};
+use plain_types::{sdk_authorization_ed25519_dalek, sdk_types, TwoWayPegData};
 use plain_types::{sdk_types::OutPoint, *};
 use sdk_types::GetValue as _;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 pub struct State {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output>>,
+    pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
 }
 
 impl State {
-    pub const NUM_DBS: u32 = 1;
+    pub const NUM_DBS: u32 = 2;
 
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
         let utxos = env.create_database(Some("utxos"))?;
-        Ok(Self { utxos })
+        let last_deposit_block = env.create_database(Some("last_deposit_block"))?;
+        Ok(Self {
+            utxos,
+            last_deposit_block,
+        })
+    }
+
+    pub fn get_utxos(&self, txn: &RoTxn) -> Result<HashMap<OutPoint, Output>, Error> {
+        let mut utxos = HashMap::new();
+        for item in self.utxos.iter(txn)? {
+            let (outpoint, output) = item?;
+            utxos.insert(outpoint, output);
+        }
+        Ok(utxos)
     }
 
     pub fn validate_transaction(
@@ -107,6 +121,28 @@ impl State {
             }
         }
         Ok(total_fees)
+    }
+
+    pub fn get_last_deposit_block_hash(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<Option<bitcoin::BlockHash>, Error> {
+        Ok(self.last_deposit_block.get(&txn, &0)?)
+    }
+
+    pub fn connect_two_way_peg_data(
+        &self,
+        txn: &mut RwTxn,
+        two_way_peg_data: &TwoWayPegData,
+    ) -> Result<(), Error> {
+        // Handle deposits.
+        if let Some(deposit_block_hash) = two_way_peg_data.deposit_block_hash {
+            self.last_deposit_block.put(txn, &0, &deposit_block_hash)?;
+        }
+        for (outpoint, deposit) in &two_way_peg_data.deposits {
+            self.utxos.put(txn, outpoint, deposit)?;
+        }
+        Ok(())
     }
 
     pub fn connect_body(&self, txn: &mut RwTxn, body: &Body) -> Result<(), Error> {

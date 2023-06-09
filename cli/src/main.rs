@@ -19,6 +19,9 @@ async fn main() -> Result<()> {
     let port = args.port.unwrap_or(DEFAULT_RPC_PORT);
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
     let mut miner = Miner::new(0, "localhost", 18443)?;
+    let seed = [0; 64];
+    let wallet_path = project_root::get_project_root()?.join("target/wallet.mdb");
+    let wallet = plain_wallet::Wallet::new(seed, &wallet_path)?;
 
     match args.command {
         Command::Net(net) => match net {
@@ -26,6 +29,16 @@ async fn main() -> Result<()> {
                 println!("connect to {host}:{port}");
                 let request = Request::new(AddPeerRequest { host, port });
                 client.add_peer(request).await?;
+            }
+        },
+        Command::Wallet(wallet_cmd) => match wallet_cmd {
+            Wallet::Newaddress { deposit } => {
+                let address = wallet.get_new_address()?;
+                let address = match deposit {
+                    true => format_deposit_address(&format!("{address}")),
+                    false => format!("{address}"),
+                };
+                println!("{address}");
             }
         },
         Command::Chain(chain) => match chain {
@@ -129,16 +142,18 @@ pub enum Command {
     /// Block chain commands.
     #[command(subcommand)]
     Chain(Chain),
-    /*
     #[command(subcommand)]
     Wallet(Wallet),
-    */
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Wallet {
+    Newaddress {
+        #[arg(short, long, default_value_t = false)]
+        deposit: bool,
+    },
+    /*
     Getbalance,
-    Getnewaddress,
     Send {
         to: Address,
         #[arg(value_parser = btc_amount_parser)]
@@ -146,6 +161,7 @@ pub enum Wallet {
         #[arg(value_parser = btc_amount_parser)]
         fee: Amount,
     },
+    */
 }
 
 #[derive(Debug, Subcommand)]
@@ -176,4 +192,14 @@ pub enum Bmm {
 
 fn btc_amount_parser(s: &str) -> Result<bitcoin::Amount, bitcoin::util::amount::ParseAmountError> {
     bitcoin::Amount::from_str_in(s, bitcoin::Denomination::Bitcoin)
+}
+
+/// Format `str_dest` with the proper `s{sidechain_number}_` prefix and a
+/// checksum postfix for calling createsidechaindeposit on mainchain.
+pub fn format_deposit_address(str_dest: &str) -> String {
+    let this_sidechain = 0;
+    let deposit_address: String = format!("s{}_{}_", this_sidechain, str_dest);
+    let hash = sha256::digest(deposit_address.as_bytes()).to_string();
+    let hash: String = hash[..6].into();
+    format!("{}{}", deposit_address, hash)
 }

@@ -1,4 +1,5 @@
-use std::{net::SocketAddr, sync::Arc};
+use plain_types::*;
+use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct Node {
@@ -43,6 +44,36 @@ impl Node {
             drivechain,
             env,
         })
+    }
+
+    pub fn submit_transaction(&self, transaction: &AuthorizedTransaction) -> Result<(), Error> {
+        let mut txn = self.env.write_txn()?;
+        self.state.validate_transaction(&txn, &transaction)?;
+        self.mempool.put(&mut txn, &transaction)?;
+        txn.commit().map_err(Error::from)?;
+        Ok(())
+    }
+
+    pub async fn submit_block(&self, header: &Header, body: &Body) -> Result<(), Error> {
+        let last_deposit_block_hash = {
+            let txn = self.env.read_txn()?;
+            self.state.get_last_deposit_block_hash(&txn)?
+        };
+        let two_way_peg_data = self
+            .drivechain
+            .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
+            .await?;
+        let mut txn = self.env.write_txn()?;
+        self.state.validate_body(&txn, &body)?;
+        self.state.connect_body(&mut txn, &body)?;
+        self.state
+            .connect_two_way_peg_data(&mut txn, &two_way_peg_data)?;
+        self.archive.append_header(&mut txn, &header)?;
+        self.archive.put_body(&mut txn, &header, &body)?;
+        dbg!(&two_way_peg_data);
+        dbg!(self.state.get_utxos(&txn)?);
+        txn.commit().map_err(Error::from)?;
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), Error> {

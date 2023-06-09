@@ -1,12 +1,14 @@
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_authorization_ed25519_dalek::Authorization;
+use plain_types::sdk_authorization_ed25519_dalek::{get_address, Authorization};
 use plain_types::sdk_types::{Address, OutPoint};
 use plain_types::{sdk_types::GetValue as _, *};
 use std::collections::HashMap;
+use std::path::Path;
 
 pub struct Wallet {
+    env: heed::Env,
     // FIXME: Don't store the seed in plaintext.
     seed: Database<OwnedType<u32>, OwnedType<[u8; 64]>>,
     pub address_to_index: Database<SerdeBincode<Address>, OwnedType<u32>>,
@@ -16,16 +18,27 @@ pub struct Wallet {
 }
 
 impl Wallet {
-    const NUM_DBS: u32 = 5;
+    pub const NUM_DBS: u32 = 5;
 
-    pub fn new(seed: [u8; 64], env: &heed::Env) -> Result<Self, Error> {
-        let seed = env.create_database(Some("seed"))?;
+    pub fn new(seed: [u8; 64], path: &Path) -> Result<Self, Error> {
+        std::fs::create_dir_all(path)?;
+        let env = heed::EnvOpenOptions::new()
+            .map_size(10 * 1024 * 1024) // 10MB
+            .max_dbs(Self::NUM_DBS)
+            .open(path)?;
+
+        let seed_db = env.create_database(Some("seed"))?;
         let address_to_index = env.create_database(Some("address_to_index"))?;
         let index_to_address = env.create_database(Some("index_to_address"))?;
         let outpoint_to_address = env.create_database(Some("outpoint_to_address"))?;
         let utxos = env.create_database(Some("utxos"))?;
+
+        let mut txn = env.write_txn()?;
+        seed_db.put(&mut txn, &0, &seed)?;
+        txn.commit()?;
         Ok(Self {
-            seed,
+            env,
+            seed: seed_db,
             address_to_index,
             index_to_address,
             outpoint_to_address,
@@ -64,6 +77,21 @@ impl Wallet {
         })
     }
 
+    pub fn get_new_address(&self) -> Result<Address, Error> {
+        let mut txn = self.env.write_txn()?;
+        let (last_index, _) = self
+            .index_to_address
+            .last(&txn)?
+            .unwrap_or((0, [0; 32].into()));
+        let index = last_index + 1;
+        let keypair = self.get_keypair(&txn, index)?;
+        let address = get_address(&keypair.public);
+        self.index_to_address.put(&mut txn, &index, &address)?;
+        self.address_to_index.put(&mut txn, &address, &index)?;
+        txn.commit()?;
+        Ok(address)
+    }
+
     fn get_keypair(&self, txn: &RoTxn, index: u32) -> Result<ed25519_dalek::Keypair, Error> {
         let seed = self.seed.get(txn, &0)?.ok_or(Error::NoSeed)?;
         let xpriv = ExtendedSecretKey::from_seed(&seed)?;
@@ -96,4 +124,6 @@ pub enum Error {
     NoIndex { address: Address },
     #[error("authorization error")]
     Authorization(#[from] sdk_authorization_ed25519_dalek::Error),
+    #[error("io error")]
+    Io(#[from] std::io::Error),
 }

@@ -134,35 +134,6 @@ impl Drivechain {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum WithdrawalBundleStatus {
-    Failed,
-    Confirmed,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WithdrawalBundle {
-    pub spent_utxos: HashMap<OutPoint, Output>,
-    pub transaction: bitcoin::Transaction,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TwoWayPegData {
-    pub deposits: HashMap<OutPoint, Output>,
-    pub deposit_block_hash: Option<bitcoin::BlockHash>,
-    pub bundle_statuses: HashMap<bitcoin::Txid, WithdrawalBundleStatus>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DisconnectData {
-    pub spent_utxos: HashMap<OutPoint, Output>,
-    pub deposits: Vec<OutPoint>,
-    pub pending_bundles: Vec<bitcoin::Txid>,
-    pub spent_bundles: HashMap<bitcoin::Txid, Vec<OutPoint>>,
-    pub spent_withdrawals: HashMap<OutPoint, Output>,
-    pub failed_withdrawals: Vec<bitcoin::Txid>,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("jsonrpsee error")]

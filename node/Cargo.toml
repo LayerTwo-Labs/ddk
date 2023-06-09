@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 plain_net = { path = "../net" }
 plain_archive = { path = "../archive" }
+plain_types = { path = "../types" }
 plain_state = { path = "../state" }
 plain_mempool = { path = "../mempool" }
 plain_drivechain = { path = "../drivechain" }

@@ -48,18 +48,11 @@ impl Node for PlainApi {
         &self,
         request: Request<SubmitTransactionRequest>,
     ) -> Result<Response<SubmitTransactionResponse>, Status> {
-        let mut txn = self.node.env.write_txn().map_err(Error::from)?;
         let transaction =
             bincode::deserialize(&request.into_inner().transaction).map_err(Error::from)?;
         self.node
-            .state
-            .validate_transaction(&txn, &transaction)
+            .submit_transaction(&transaction)
             .map_err(Error::from)?;
-        self.node
-            .mempool
-            .put(&mut txn, &transaction)
-            .map_err(Error::from)?;
-        // txn.commit().map_err(Error::from)?;
         return Ok(Response::new(SubmitTransactionResponse {}));
     }
 
@@ -92,25 +85,10 @@ impl Node for PlainApi {
         let header: plain_types::Header =
             bincode::deserialize(&request.header).map_err(Error::from)?;
         let body: plain_types::Body = bincode::deserialize(&request.body).map_err(Error::from)?;
-        let mut txn = self.node.env.write_txn().map_err(Error::from)?;
         self.node
-            .state
-            .validate_body(&txn, &body)
+            .submit_block(&header, &body)
+            .await
             .map_err(Error::from)?;
-        self.node
-            .state
-            .connect_body(&mut txn, &body)
-            .map_err(Error::from)?;
-        self.node
-            .archive
-            .append_header(&mut txn, &header)
-            .map_err(Error::from)?;
-        self.node
-            .archive
-            .put_body(&mut txn, &header, &body)
-            .map_err(Error::from)?;
-        dbg!(header, body);
-        txn.commit().map_err(Error::from)?;
         return Ok(Response::new(SubmitBlockResponse {}));
     }
 
