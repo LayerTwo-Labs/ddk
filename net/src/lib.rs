@@ -1,6 +1,6 @@
 use anyhow::Result;
 use plain_types::sdk_types::BlockHash;
-use plain_types::{Body, Header};
+use plain_types::{AuthorizedTransaction, Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -58,12 +58,15 @@ impl Peer {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     GetBlock { height: u32 },
+    PushTransaction { transaction: AuthorizedTransaction },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     Block { header: Header, body: Body },
     NoBlock,
+    TransactionAccepted,
+    TransactionRejected,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -54,6 +54,7 @@ impl Node for PlainApi {
             bincode::deserialize(&request.into_inner().transaction).map_err(Error::from)?;
         self.node
             .submit_transaction(&transaction)
+            .await
             .map_err(Error::from)?;
         return Ok(Response::new(SubmitTransactionResponse {}));
     }

@@ -13,12 +13,6 @@ pub struct Node {
     pub env: heed::Env,
 }
 
-// 1. Transactions are collected into a block.
-// 2. Block hash is computed.
-// 3. BMM attempt is made.
-// 4. BMM attempt is successful.
-// 5. Sidechain block is mined, now it is propagated.
-
 impl Node {
     pub fn new(bind_addr: SocketAddr, main_host: &str, main_port: u32) -> Result<Self, Error> {
         let env_path = project_root::get_project_root()?.join("target/net.mdb");
@@ -48,11 +42,22 @@ impl Node {
         })
     }
 
-    pub fn submit_transaction(&self, transaction: &AuthorizedTransaction) -> Result<(), Error> {
-        let mut txn = self.env.write_txn()?;
-        self.state.validate_transaction(&txn, &transaction)?;
-        self.mempool.put(&mut txn, &transaction)?;
-        txn.commit().map_err(Error::from)?;
+    pub async fn submit_transaction(
+        &self,
+        transaction: &AuthorizedTransaction,
+    ) -> Result<(), Error> {
+        {
+            let mut txn = self.env.write_txn()?;
+            self.state.validate_transaction(&txn, &transaction)?;
+            self.mempool.put(&mut txn, &transaction)?;
+            txn.commit().map_err(Error::from)?;
+        }
+        for peer in self.net.peers.read().await.values() {
+            peer.request(&Request::PushTransaction {
+                transaction: transaction.clone(),
+            })
+            .await?;
+        }
         Ok(())
     }
 
@@ -160,6 +165,46 @@ impl Node {
                     .map_err(plain_net::Error::from)?;
                 send.finish().await.map_err(plain_net::Error::from)?;
             }
+            Request::PushTransaction { transaction } => {
+                let valid = {
+                    let txn = self.env.read_txn()?;
+                    self.state.validate_transaction(&txn, &transaction)
+                };
+                match valid {
+                    Err(err) => {
+                        let response = Response::TransactionRejected;
+                        let response = bincode::serialize(&response)?;
+                        send.write_all(&response)
+                            .await
+                            .map_err(plain_net::Error::from)?;
+                        return Err(err.into());
+                    }
+                    Ok(_) => {
+                        {
+                            let mut txn = self.env.write_txn()?;
+                            println!("adding transaction to mempool: {:?}", &transaction);
+                            self.mempool.put(&mut txn, &transaction)?;
+                            txn.commit()?;
+                        }
+                        for peer0 in self.net.peers.read().await.values() {
+                            if peer0.connection.stable_id() == peer.connection.stable_id() {
+                                continue;
+                            }
+                            peer0
+                                .request(&Request::PushTransaction {
+                                    transaction: transaction.clone(),
+                                })
+                                .await?;
+                        }
+                        let response = Response::TransactionAccepted;
+                        let response = bincode::serialize(&response)?;
+                        send.write_all(&response)
+                            .await
+                            .map_err(plain_net::Error::from)?;
+                        return Ok(());
+                    }
+                }
+            }
         };
         Ok(())
     }
@@ -264,6 +309,8 @@ impl Node {
                                     node.submit_block(&header, &body).await.unwrap();
                                 }
                                 Response::NoBlock => {}
+                                Response::TransactionAccepted => {}
+                                Response::TransactionRejected => {}
                             };
                         }
                     }
