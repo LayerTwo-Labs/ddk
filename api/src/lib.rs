@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
@@ -118,18 +120,13 @@ impl Node for PlainApi {
         &self,
         request: Request<AddPeerRequest>,
     ) -> Result<Response<AddPeerResponse>, Status> {
-        /*
         let AddPeerRequest { host, port } = request.into_inner();
         let addr: SocketAddr = format!("{host}:{port}")
             .parse()
-            .map_err(plain_net::Error::from)
+            .map_err(plain_node::Error::from)
             .map_err(Error::from)?;
-        let res = self.net.connect(addr).await;
-        dbg!(&res);
-        res.map_err(Error::from)?;
+        self.node.connect(addr).await.map_err(Error::from)?;
         Ok(Response::new(AddPeerResponse {}))
-        */
-        todo!();
     }
 }
 

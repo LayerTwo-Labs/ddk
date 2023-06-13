@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+plain_types = { path = "../types" }
 plain_archive = { path = "../archive" }
 plain_state = { path = "../state" }
 plain_mempool = { path = "../mempool" }
@@ -13,10 +14,11 @@ plain_drivechain = { path = "../drivechain" }
 
 quinn = "0.10.1"
 rustls = { version = "0.21.1", features = ["dangerous_configuration"] }
-serde = { version = "1.0.163", features = ["derive"] }
 thiserror = "1.0.40"
 rcgen = "0.10.0"
 anyhow = "1.0.71"
 tokio = "1.28.2"
 byteorder = "1.4.3"
 bytes = "1.4.0"
+serde = { version = "1.0.164", features = ["derive"] }
+bincode = "1.3.3"

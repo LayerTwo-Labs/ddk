@@ -1,5 +1,7 @@
+use plain_net::{PeerState, Request, Response};
 use plain_types::*;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc, vec};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct Node {
@@ -59,66 +61,217 @@ impl Node {
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
         };
-        let two_way_peg_data = self
-            .drivechain
-            .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
-            .await?;
-        let mut txn = self.env.write_txn()?;
-        self.state.validate_body(&txn, &body)?;
-        self.state.connect_body(&mut txn, &body)?;
-        self.state
-            .connect_two_way_peg_data(&mut txn, &two_way_peg_data)?;
-        self.archive.append_header(&mut txn, &header)?;
-        self.archive.put_body(&mut txn, &header, &body)?;
-        dbg!(&two_way_peg_data);
-        dbg!(self.state.get_utxos(&txn)?);
-        txn.commit().map_err(Error::from)?;
+        {
+            let two_way_peg_data = self
+                .drivechain
+                .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
+                .await?;
+            let mut txn = self.env.write_txn()?;
+            self.state.validate_body(&txn, &body)?;
+            self.state.connect_body(&mut txn, &body)?;
+            self.state
+                .connect_two_way_peg_data(&mut txn, &two_way_peg_data)?;
+            self.archive.append_header(&mut txn, &header)?;
+            self.archive.put_body(&mut txn, &header, &body)?;
+            dbg!(&two_way_peg_data);
+            dbg!(self.state.get_utxos(&txn)?);
+            txn.commit().map_err(Error::from)?;
+        }
+        Ok(())
+    }
+
+    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error> {
+        let peer = self.net.connect(addr).await?;
+        let peer0 = peer.clone();
+        let node0 = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match node0.peer_listen(&peer0).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        println!("{:?}", err);
+                        break;
+                    }
+                }
+            }
+        });
+        let peer0 = peer.clone();
+        let node0 = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match node0.heart_beat_listen(&peer0).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        println!("{:?}", err);
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+
+    pub async fn heart_beat_listen(&self, peer: &plain_net::Peer) -> Result<(), Error> {
+        let message = match peer.connection.read_datagram().await {
+            Ok(message) => message,
+            Err(err) => {
+                self.net
+                    .peers
+                    .write()
+                    .await
+                    .remove(&peer.connection.stable_id());
+                let addr = peer.connection.stable_id();
+                println!("connection {addr} closed");
+                return Err(plain_net::Error::from(err).into());
+            }
+        };
+        let state: PeerState = bincode::deserialize(&message)?;
+        *peer.state.write().await = Some(state);
+        Ok(())
+    }
+
+    pub async fn peer_listen(&self, peer: &plain_net::Peer) -> Result<(), Error> {
+        let (mut send, mut recv) = peer
+            .connection
+            .accept_bi()
+            .await
+            .map_err(plain_net::Error::from)?;
+        let data = recv
+            .read_to_end(plain_net::READ_LIMIT)
+            .await
+            .map_err(plain_net::Error::from)?;
+        let message: Request = bincode::deserialize(&data)?;
+        match message {
+            Request::GetBlock { height } => {
+                let (header, body) = {
+                    let txn = self.env.read_txn()?;
+                    (
+                        self.archive.get_header(&txn, height)?,
+                        self.archive.get_body(&txn, height)?,
+                    )
+                };
+                let response = match (header, body) {
+                    (Some(header), Some(body)) => Response::Block { header, body },
+                    (_, _) => Response::NoBlock,
+                };
+                let response = bincode::serialize(&response)?;
+                send.write_all(&response)
+                    .await
+                    .map_err(plain_net::Error::from)?;
+                send.finish().await.map_err(plain_net::Error::from)?;
+            }
+        };
         Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
-        let net = self.net.clone();
+        // Listening to connections.
+        let node = self.clone();
         tokio::spawn(async move {
             loop {
-                let incoming_conn = net.server.accept().await.unwrap();
+                let incoming_conn = node.net.server.accept().await.unwrap();
                 let connection = incoming_conn.await.unwrap();
+                for peer in node.net.peers.read().await.values() {
+                    if peer.connection.remote_address() == connection.remote_address() {
+                        println!(
+                            "already connected to {} refusing duplicate connection",
+                            connection.remote_address()
+                        );
+                        connection
+                            .close(plain_net::quinn::VarInt::from_u32(1), b"already connected");
+                    }
+                }
+                if connection.close_reason().is_some() {
+                    continue;
+                }
                 println!(
-                    "[server] connection accepted: addr={}",
-                    connection.remote_address()
+                    "[server] connection accepted: addr={} id={}",
+                    connection.remote_address(),
+                    connection.stable_id(),
                 );
                 let peer = plain_net::Peer {
-                    state: plain_net::PeerState::default(),
+                    state: Arc::new(RwLock::new(None)),
                     connection,
                 };
-                net.peers
+                let node0 = node.clone();
+                let peer0 = peer.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match node0.peer_listen(&peer0).await {
+                            Ok(_) => {}
+                            Err(err) => {
+                                println!("{:?}", err);
+                                break;
+                            }
+                        }
+                    }
+                });
+                let node0 = node.clone();
+                let peer0 = peer.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match node0.heart_beat_listen(&peer0).await {
+                            Ok(_) => {}
+                            Err(err) => {
+                                println!("{:?}", err);
+                                break;
+                            }
+                        }
+                    }
+                });
+                node.net
+                    .peers
                     .write()
                     .await
-                    .insert(peer.connection.remote_address(), peer);
+                    .insert(peer.connection.stable_id(), peer);
             }
         });
-        let net = self.net.clone();
-        let archive = self.archive.clone();
-        let state = self.state.clone();
-        let env = self.env.clone();
+
+        // Heart beat.
+        let node = self.clone();
         tokio::spawn(async move {
             loop {
+                for peer in node.net.peers.read().await.values() {
+                    let block_height = {
+                        let txn = node.env.read_txn().unwrap();
+                        node.archive.get_height(&txn).unwrap()
+                    };
+                    let state = PeerState { block_height };
+                    peer.heart_beat(&state).unwrap();
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         });
 
-        let net = self.net.clone();
-        let archive = self.archive.clone();
-        let state = self.state.clone();
-        let env = self.env.clone();
-        let drivechain = self.drivechain.clone();
+        // Request missing headers.
+        let node = self.clone();
         tokio::spawn(async move {
-            let host = "localhost";
-            let port = 18443;
-            // Collect transactions.
-            // Construct a block.
-            // BMM
-            // Send the block out over the network
+            loop {
+                for peer in node.net.peers.read().await.values() {
+                    if let Some(state) = &peer.state.read().await.as_ref() {
+                        let height = {
+                            let txn = node.env.read_txn().unwrap();
+                            node.archive.get_height(&txn).unwrap()
+                        };
+                        if state.block_height > height {
+                            let response = peer
+                                .request(&Request::GetBlock { height: height + 1 })
+                                .await
+                                .unwrap();
+                            match response {
+                                Response::Block { header, body } => {
+                                    println!("got new header {:?}", &header);
+                                    node.submit_block(&header, &body).await.unwrap();
+                                }
+                                Response::NoBlock => {}
+                            };
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         });
+
         Ok(())
     }
 }
@@ -141,4 +294,6 @@ pub enum Error {
     MemPool(#[from] plain_mempool::Error),
     #[error("state error")]
     State(#[from] plain_state::Error),
+    #[error("bincode error")]
+    Bincode(#[from] bincode::Error),
 }

@@ -27,6 +27,16 @@ impl Archive {
         })
     }
 
+    pub fn get_header(&self, txn: &RoTxn, height: u32) -> Result<Option<Header>, Error> {
+        let header = self.headers.get(txn, &height)?;
+        Ok(header)
+    }
+
+    pub fn get_body(&self, txn: &RoTxn, height: u32) -> Result<Option<Body>, Error> {
+        let header = self.bodies.get(txn, &height)?;
+        Ok(header)
+    }
+
     pub fn get_best_hash(&self, txn: &RoTxn) -> Result<BlockHash, Error> {
         let best_hash = match self.headers.last(txn)? {
             Some((_, header)) => hash(&header).into(),

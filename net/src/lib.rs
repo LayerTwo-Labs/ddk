@@ -1,9 +1,15 @@
 use anyhow::Result;
+use plain_types::sdk_types::BlockHash;
+use plain_types::{Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use std::collections::HashMap;
+pub use quinn;
+use std::collections::{HashMap, HashSet};
 use std::{net::SocketAddr, sync::Arc};
+
+pub const READ_LIMIT: usize = 1024;
 
 // State.
 // Archive.
@@ -22,27 +28,52 @@ use std::{net::SocketAddr, sync::Arc};
 pub struct Net {
     pub client: Endpoint,
     pub server: Endpoint,
-    pub peer_state: Arc<RwLock<PeerState>>,
-    pub peers: Arc<RwLock<HashMap<SocketAddr, Peer>>>,
+    pub peers: Arc<RwLock<HashMap<usize, Peer>>>,
 }
 
+#[derive(Clone)]
 pub struct Peer {
-    pub state: PeerState,
+    pub state: Arc<RwLock<Option<PeerState>>>,
     pub connection: Connection,
 }
 
-#[derive(Clone, Debug)]
+impl Peer {
+    pub fn heart_beat(&self, state: &PeerState) -> Result<(), Error> {
+        let message = bincode::serialize(state)?;
+        self.connection.send_datagram(bytes::Bytes::from(message))?;
+        Ok(())
+    }
+
+    pub async fn request(&self, message: &Request) -> Result<Response, Error> {
+        let (mut send, mut recv) = self.connection.open_bi().await?;
+        let message = bincode::serialize(message)?;
+        send.write_all(&message).await?;
+        send.finish().await?;
+        let response = recv.read_to_end(READ_LIMIT).await?;
+        let response: Response = bincode::deserialize(&response)?;
+        Ok(response)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Request {
+    GetBlock { height: u32 },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Response {
+    Block { header: Header, body: Body },
+    NoBlock,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PeerState {
-    pub header_height: u32,
     pub block_height: u32,
 }
 
 impl Default for PeerState {
     fn default() -> Self {
-        Self {
-            header_height: 0,
-            block_height: 0,
-        }
+        Self { block_height: 0 }
     }
 }
 
@@ -51,28 +82,33 @@ impl Net {
         let (server, _) = make_server_endpoint(bind_addr)?;
         let client = make_client_endpoint("0.0.0.0:0".parse()?)?;
         let peers = Arc::new(RwLock::new(HashMap::new()));
-        let peer_state = Arc::new(RwLock::new(PeerState::default()));
         Ok(Net {
             server,
             client,
             peers,
-            peer_state,
         })
     }
-    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error> {
+    pub async fn connect(&self, addr: SocketAddr) -> Result<Peer, Error> {
+        for peer in self.peers.read().await.values() {
+            if peer.connection.remote_address() == addr {
+                return Err(Error::AlreadyConnected(addr));
+            }
+        }
         let connection = self.client.connect(addr, "localhost")?.await?;
         let peer = Peer {
-            state: PeerState {
-                header_height: 0,
-                block_height: 0,
-            },
+            state: Arc::new(RwLock::new(None)),
             connection,
         };
         self.peers
             .write()
             .await
-            .insert(peer.connection.remote_address(), peer);
-        Ok(())
+            .insert(peer.connection.stable_id(), peer.clone());
+        Ok(peer)
+    }
+
+    pub async fn disconnect(&self, stable_id: usize) -> Result<Option<Peer>, Error> {
+        let peer = self.peers.write().await.remove(&stable_id);
+        Ok(peer)
     }
 }
 
@@ -160,6 +196,12 @@ pub enum Error {
     RcGen(#[from] rcgen::RcgenError),
     #[error("accept error")]
     AcceptError,
+    #[error("read to end error")]
+    ReadToEnd(#[from] quinn::ReadToEndError),
+    #[error("write error")]
+    Write(#[from] quinn::WriteError),
+    #[error("send datagram error")]
+    SendDatagram(#[from] quinn::SendDatagramError),
     #[error("quinn rustls error")]
     QuinnRustls(#[from] quinn::crypto::rustls::Error),
     #[error("archive error")]
@@ -170,4 +212,8 @@ pub enum Error {
     MemPool(#[from] plain_mempool::Error),
     #[error("state error")]
     State(#[from] plain_state::Error),
+    #[error("bincode error")]
+    Bincode(#[from] bincode::Error),
+    #[error("already connected to peer at {0}")]
+    AlreadyConnected(SocketAddr),
 }
