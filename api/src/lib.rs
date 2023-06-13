@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
+use plain_types::sdk_types::Address;
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
@@ -128,6 +130,20 @@ impl Node for PlainApi {
             .map_err(Error::from)?;
         self.node.connect(addr).await.map_err(Error::from)?;
         Ok(Response::new(AddPeerResponse {}))
+    }
+
+    async fn get_utxos_by_addresses(
+        &self,
+        request: Request<GetUtxosByAddressesRequest>,
+    ) -> Result<Response<GetUtxosByAddressesResponse>, Status> {
+        let addresses: HashSet<Address> =
+            bincode::deserialize(&request.into_inner().addresses).map_err(Error::from)?;
+        let utxos = self
+            .node
+            .get_utxos_by_addresses(&addresses)
+            .map_err(Error::from)?;
+        let utxos = bincode::serialize(&utxos).map_err(Error::from)?;
+        Ok(Response::new(GetUtxosByAddressesResponse { utxos }))
     }
 }
 

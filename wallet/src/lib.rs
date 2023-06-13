@@ -2,9 +2,9 @@ use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::sdk_authorization_ed25519_dalek::{get_address, Authorization};
-use plain_types::sdk_types::{Address, OutPoint};
+use plain_types::sdk_types::{Address, GetValue, OutPoint};
 use plain_types::{sdk_types::GetValue as _, *};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub struct Wallet {
@@ -48,6 +48,35 @@ impl Wallet {
 
     pub fn select_coins() -> Result<HashMap<OutPoint, Output>, Error> {
         todo!();
+    }
+
+    pub fn put_utxos(&self, utxos: &HashMap<OutPoint, Output>) -> Result<(), Error> {
+        let mut txn = self.env.write_txn()?;
+        for (outpoint, output) in utxos {
+            self.utxos.put(&mut txn, outpoint, output)?;
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
+    pub fn get_balance(&self) -> Result<u64, Error> {
+        let mut balance: u64 = 0;
+        let txn = self.env.read_txn()?;
+        for item in self.utxos.iter(&txn)? {
+            let (_, utxo) = item?;
+            balance += utxo.get_value();
+        }
+        Ok(balance)
+    }
+
+    pub fn get_addresses(&self) -> Result<HashSet<Address>, Error> {
+        let txn = self.env.read_txn()?;
+        let mut addresses = HashSet::new();
+        for item in self.index_to_address.iter(&txn)? {
+            let (_, address) = item?;
+            addresses.insert(address);
+        }
+        Ok(addresses)
     }
 
     pub fn authorize(

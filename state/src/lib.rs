@@ -2,6 +2,7 @@
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
+use plain_types::sdk_types::{Address, GetAddress};
 use plain_types::{sdk_authorization_ed25519_dalek, sdk_types, TwoWayPegData};
 use plain_types::{sdk_types::OutPoint, *};
 use sdk_types::GetValue as _;
@@ -30,6 +31,21 @@ impl State {
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
             utxos.insert(outpoint, output);
+        }
+        Ok(utxos)
+    }
+
+    pub fn get_utxos_by_addresses(
+        &self,
+        txn: &RoTxn,
+        addresses: &HashSet<Address>,
+    ) -> Result<HashMap<OutPoint, Output>, Error> {
+        let mut utxos = HashMap::new();
+        for item in self.utxos.iter(txn)? {
+            let (outpoint, output) = item?;
+            if addresses.contains(&output.address) {
+                utxos.insert(outpoint, output);
+            }
         }
         Ok(utxos)
     }

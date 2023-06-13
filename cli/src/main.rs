@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use plain_miner::Miner;
 use plain_types::{
     bitcoin::{self, hashes::Hash, Amount},
     sdk_types,
-    sdk_types::{Address, BlockHash},
-    Body, Header,
+    sdk_types::{Address, BlockHash, OutPoint},
+    Body, Header, Output,
 };
 use sdk_api::{
     node::{node_client::NodeClient, *},
@@ -32,13 +34,41 @@ async fn main() -> Result<()> {
             }
         },
         Command::Wallet(wallet_cmd) => match wallet_cmd {
-            Wallet::Newaddress { deposit } => {
+            Wallet::Getnewaddress { deposit } => {
                 let address = wallet.get_new_address()?;
                 let address = match deposit {
                     true => format_deposit_address(&format!("{address}")),
                     false => format!("{address}"),
                 };
                 println!("{address}");
+            }
+            Wallet::Getaddresses { deposit } => {
+                let addresses = wallet.get_addresses()?;
+                for address in &addresses {
+                    let address = match deposit {
+                        true => format_deposit_address(&format!("{address}")),
+                        false => format!("{address}"),
+                    };
+                    println!("{address}");
+                }
+            }
+            Wallet::Sync => {
+                let addresses = wallet.get_addresses()?;
+                let addresses = bincode::serialize(&addresses)?;
+                let request = Request::new(GetUtxosByAddressesRequest { addresses });
+                let utxos = client
+                    .get_utxos_by_addresses(request)
+                    .await?
+                    .into_inner()
+                    .utxos;
+                let utxos: HashMap<OutPoint, Output> = bincode::deserialize(&utxos)?;
+                dbg!(&utxos);
+                wallet.put_utxos(&utxos)?;
+            }
+            Wallet::Getbalance => {
+                let balance = wallet.get_balance()?;
+                let balance = bitcoin::Amount::from_sat(balance);
+                println!("{balance}");
             }
         },
         Command::Chain(chain) => match chain {
@@ -148,12 +178,17 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum Wallet {
-    Newaddress {
+    Getnewaddress {
         #[arg(short, long, default_value_t = false)]
         deposit: bool,
     },
-    /*
+    Getaddresses {
+        #[arg(short, long, default_value_t = false)]
+        deposit: bool,
+    },
+    Sync,
     Getbalance,
+    /*
     Send {
         to: Address,
         #[arg(value_parser = btc_amount_parser)]

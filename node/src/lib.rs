@@ -1,6 +1,14 @@
 use plain_net::{PeerState, Request, Response};
-use plain_types::*;
-use std::{net::SocketAddr, sync::Arc, vec};
+use plain_types::{
+    sdk_types::{Address, OutPoint},
+    *,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+    vec,
+};
 use tokio::sync::RwLock;
 
 #[derive(Clone)]
@@ -59,6 +67,15 @@ impl Node {
             .await?;
         }
         Ok(())
+    }
+
+    pub fn get_utxos_by_addresses(
+        &self,
+        addresses: &HashSet<Address>,
+    ) -> Result<HashMap<OutPoint, Output>, Error> {
+        let txn = self.env.read_txn()?;
+        let utxos = self.state.get_utxos_by_addresses(&txn, addresses)?;
+        Ok(utxos)
     }
 
     pub async fn submit_block(&self, header: &Header, body: &Body) -> Result<(), Error> {
