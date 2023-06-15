@@ -14,8 +14,7 @@ plain_mempool = { path = "../mempool" }
 plain_drivechain = { path = "../drivechain" }
 plain_types = { path = "../types" }
 
-# sdk_api = { git = "https://github.com/nchashch/sdk_api" }
-sdk_api = { path = "../../sdk_api" }
+sdk_api = { git = "https://github.com/nchashch/sdk_api" }
 
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread"] }

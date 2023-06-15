@@ -10,7 +10,7 @@ plain_types = { path = "../types" }
 plain_wallet = { path = "../wallet" }
 plain_miner = { path = "../miner" }
 
-sdk_api = { path = "../../sdk_api" }
+sdk_api = { git = "https://github.com/nchashch/sdk_api" }
 
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 clap = { version = "4.3.0", features = ["derive"] }

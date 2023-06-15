@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use sdk_api::node::node_server::NodeServer;
+use plain_api::sdk_api::node::node_server::NodeServer;
 use std::{net::SocketAddr, path::PathBuf};
 use tonic::transport::Server;
 

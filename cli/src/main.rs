@@ -2,16 +2,16 @@ use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use sdk_api::{
+    node::{node_client::NodeClient, *},
+    tonic::Request,
+};
 use plain_miner::Miner;
 use plain_types::{
     bitcoin::{self, Amount},
     sdk_types::{self, GetValue},
     sdk_types::{Address, BlockHash, OutPoint},
     AuthorizedTransaction, Body, Header, Output,
-};
-use sdk_api::{
-    node::{node_client::NodeClient, *},
-    tonic::Request,
 };
 
 #[tokio::main]

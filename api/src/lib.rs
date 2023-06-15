@@ -7,8 +7,8 @@ use plain_types::sdk_types::OutPoint;
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
-use sdk_api::tonic::codegen::http::header;
 use tonic::{Request, Response, Status};
+pub use sdk_api;
 
 pub struct PlainApi {
     node: plain_node::Node,
