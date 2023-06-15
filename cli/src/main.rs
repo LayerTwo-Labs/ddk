@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use plain_miner::Miner;
 use plain_types::{
-    bitcoin::{self, hashes::Hash, Amount},
-    sdk_types,
+    bitcoin::{self, Amount},
+    sdk_types::{self, GetValue},
     sdk_types::{Address, BlockHash, OutPoint},
-    Body, Header, Output,
+    AuthorizedTransaction, Body, Header, Output,
 };
 use sdk_api::{
     node::{node_client::NodeClient, *},
@@ -19,12 +19,13 @@ async fn main() -> Result<()> {
     const DEFAULT_RPC_PORT: u32 = 3000;
     let args = Cli::parse();
     let port = args.port.unwrap_or(DEFAULT_RPC_PORT);
+    let datadir = args
+        .datadir
+        .unwrap_or(project_root::get_project_root()?.join("target/plain"));
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
     let mut miner = Miner::new(0, "localhost", 18443)?;
-    let seed = [0; 64];
-    let wallet_path = project_root::get_project_root()?.join("target/wallet.mdb");
-    let wallet = plain_wallet::Wallet::new(seed, &wallet_path)?;
-
+    let wallet_path = datadir.join("wallet.mdb");
+    let wallet = plain_wallet::Wallet::new(&wallet_path)?;
     match args.command {
         Command::Net(net) => match net {
             Net::Connect { host, port } => {
@@ -34,6 +35,13 @@ async fn main() -> Result<()> {
             }
         },
         Command::Wallet(wallet_cmd) => match wallet_cmd {
+            Wallet::Setseed => {
+                let seed = rpassword::prompt_password("seed words: ")?;
+                let passphrase = rpassword::prompt_password("passphrase: ")?;
+                let seed = bip39::Mnemonic::parse(&seed)?.to_seed(passphrase);
+                wallet.set_seed(seed)?;
+                println!("new seed was set");
+            }
             Wallet::Getnewaddress { deposit } => {
                 let address = wallet.get_new_address()?;
                 let address = match deposit {
@@ -62,13 +70,42 @@ async fn main() -> Result<()> {
                     .into_inner()
                     .utxos;
                 let utxos: HashMap<OutPoint, Output> = bincode::deserialize(&utxos)?;
-                dbg!(&utxos);
+
+                let outpoints: Vec<_> = wallet.get_utxos()?.into_keys().collect();
+                let outpoints = bincode::serialize(&outpoints)?;
+                let request = Request::new(GetSpentUtxosRequest { outpoints });
+                let spent = client
+                    .get_spent_utxos(request)
+                    .await?
+                    .into_inner()
+                    .spent_outpoints;
+                let spent: Vec<_> = bincode::deserialize(&spent)?;
                 wallet.put_utxos(&utxos)?;
+                wallet.delete_utxos(&spent)?;
+                println!("{} new utxos added", utxos.len());
+                println!("{} spent utxos deleted", spent.len());
             }
             Wallet::Getbalance => {
                 let balance = wallet.get_balance()?;
                 let balance = bitcoin::Amount::from_sat(balance);
                 println!("{balance}");
+            }
+            Wallet::Getutxos => {
+                let utxos = wallet.get_utxos()?;
+                for (outpoint, output) in &utxos {
+                    println!("outpoint: {outpoint}");
+                    println!("address: {}", output.address,);
+                    println!("value: {}", Amount::from_sat(output.get_value()));
+                    println!();
+                }
+            }
+            Wallet::Send { to, amount, fee } => {
+                let transaction = wallet.create_transaction(to, amount.to_sat(), fee.to_sat())?;
+                let transaction = wallet.authorize(transaction)?;
+                dbg!(&transaction);
+                let transaction = bincode::serialize(&transaction)?;
+                let request = Request::new(SubmitTransactionRequest { transaction });
+                client.submit_transaction(request).await?;
             }
         },
         Command::Chain(chain) => match chain {
@@ -96,16 +133,19 @@ async fn main() -> Result<()> {
             Bmm::Attempt { amount } => {
                 println!("attempting BMM with {amount}");
                 let request = Request::new(GetTransactionsRequest {});
-                let transactions = client.get_transactions(request).await?;
-                let transactions: Vec<_> = transactions
-                    .into_inner()
-                    .transactions
-                    .iter()
-                    .map(Vec::as_slice)
-                    .map(bincode::deserialize)
-                    .collect::<Result<_, _>>()?;
-                let coinbase = vec![];
+                let transactions = client.get_transactions(request).await?.into_inner();
+                let fee = transactions.fee;
+                let transactions: Vec<AuthorizedTransaction> =
+                    bincode::deserialize(&transactions.transactions)?;
+                let coinbase = match fee {
+                    0 => vec![],
+                    _ => vec![Output {
+                        address: wallet.get_new_address()?,
+                        content: sdk_types::Content::Value(fee),
+                    }],
+                };
                 let body = Body::new(transactions, coinbase);
+                dbg!(&body);
                 let prev_side_hash = {
                     let response = client
                         .get_best_hash(Request::new(GetBestHashRequest {}))
@@ -147,6 +187,8 @@ async fn main() -> Result<()> {
 #[clap(author, version, about)]
 pub struct Cli {
     #[arg(short, long)]
+    pub datadir: Option<PathBuf>,
+    #[arg(short, long)]
     pub port: Option<u32>,
     #[command(subcommand)]
     pub command: Command,
@@ -178,6 +220,7 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum Wallet {
+    Setseed,
     Getnewaddress {
         #[arg(short, long, default_value_t = false)]
         deposit: bool,
@@ -188,7 +231,7 @@ pub enum Wallet {
     },
     Sync,
     Getbalance,
-    /*
+    Getutxos,
     Send {
         to: Address,
         #[arg(value_parser = btc_amount_parser)]
@@ -196,7 +239,6 @@ pub enum Wallet {
         #[arg(value_parser = btc_amount_parser)]
         fee: Amount,
     },
-    */
 }
 
 #[derive(Debug, Subcommand)]
@@ -238,3 +280,6 @@ pub fn format_deposit_address(str_dest: &str) -> String {
     let hash: String = hash[..6].into();
     format!("{}{}", deposit_address, hash)
 }
+
+// Testing seed 0: resist miss peasant neither curve near chef crush chapter patch run best
+// Testing seed 1: valve six lady gossip muscle rather dry elephant void catalog elder surprise

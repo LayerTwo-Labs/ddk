@@ -61,7 +61,7 @@ impl State {
             .iter()
             .zip(filled_transaction.spent_utxos.iter())
         {
-            if sdk_types::Address::from(authorization.public_key.to_bytes()) != spent_utxo.address {
+            if authorization.get_address() != spent_utxo.address {
                 return Err(Error::WrongPubKeyForAddress);
             }
         }
@@ -70,7 +70,7 @@ impl State {
         Ok(fee)
     }
 
-    fn fill_transaction(
+    pub fn fill_transaction(
         &self,
         txn: &RoTxn,
         transaction: &Transaction,
@@ -132,7 +132,7 @@ impl State {
             .iter()
             .flat_map(|t| t.spent_utxos.iter());
         for (authorization, spent_utxo) in body.authorizations.iter().zip(spent_utxos) {
-            if sdk_types::Address::from(authorization.public_key.to_bytes()) != spent_utxo.address {
+            if authorization.get_address() != spent_utxo.address {
                 return Err(Error::WrongPubKeyForAddress);
             }
         }

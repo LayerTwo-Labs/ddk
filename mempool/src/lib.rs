@@ -16,6 +16,10 @@ impl MemPool {
     }
 
     pub fn put(&self, txn: &mut RwTxn, transaction: &AuthorizedTransaction) -> Result<(), Error> {
+        println!(
+            "adding transaction {} to mempool",
+            transaction.transaction.txid()
+        );
         self.transactions
             .put(txn, &transaction.transaction.txid().into(), &transaction)?;
         Ok(())

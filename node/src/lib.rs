@@ -6,8 +6,8 @@ use plain_types::{
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
+    path::Path,
     sync::Arc,
-    vec,
 };
 use tokio::sync::RwLock;
 
@@ -22,9 +22,14 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(bind_addr: SocketAddr, main_host: &str, main_port: u32) -> Result<Self, Error> {
-        let env_path = project_root::get_project_root()?.join("target/net.mdb");
-        let _ = std::fs::remove_dir_all(&env_path);
+    pub fn new(
+        datadir: &Path,
+        bind_addr: SocketAddr,
+        main_host: &str,
+        main_port: u32,
+    ) -> Result<Self, Error> {
+        let env_path = datadir.join("data.mdb");
+        // let _ = std::fs::remove_dir_all(&env_path);
         std::fs::create_dir_all(&env_path)?;
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
@@ -67,6 +72,17 @@ impl Node {
             .await?;
         }
         Ok(())
+    }
+
+    pub fn get_spent_utxos(&self, outpoints: &[OutPoint]) -> Result<Vec<OutPoint>, Error> {
+        let txn = self.env.read_txn()?;
+        let mut spent = vec![];
+        for outpoint in outpoints {
+            if self.state.utxos.get(&txn, outpoint)?.is_none() {
+                spent.push(*outpoint);
+            }
+        }
+        Ok(spent)
     }
 
     pub fn get_utxos_by_addresses(
@@ -335,7 +351,6 @@ impl Node {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         });
-
         Ok(())
     }
 }

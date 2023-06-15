@@ -13,41 +13,93 @@ pub struct Wallet {
     seed: Database<OwnedType<u32>, OwnedType<[u8; 64]>>,
     pub address_to_index: Database<SerdeBincode<Address>, OwnedType<u32>>,
     pub index_to_address: Database<OwnedType<u32>, SerdeBincode<Address>>,
-    pub outpoint_to_address: Database<SerdeBincode<OutPoint>, SerdeBincode<Address>>,
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output>>,
 }
 
 impl Wallet {
     pub const NUM_DBS: u32 = 5;
 
-    pub fn new(seed: [u8; 64], path: &Path) -> Result<Self, Error> {
+    pub fn new(path: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(path)?;
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(Self::NUM_DBS)
             .open(path)?;
-
         let seed_db = env.create_database(Some("seed"))?;
         let address_to_index = env.create_database(Some("address_to_index"))?;
         let index_to_address = env.create_database(Some("index_to_address"))?;
-        let outpoint_to_address = env.create_database(Some("outpoint_to_address"))?;
         let utxos = env.create_database(Some("utxos"))?;
-
-        let mut txn = env.write_txn()?;
-        seed_db.put(&mut txn, &0, &seed)?;
-        txn.commit()?;
         Ok(Self {
             env,
             seed: seed_db,
             address_to_index,
             index_to_address,
-            outpoint_to_address,
             utxos,
         })
     }
 
-    pub fn select_coins() -> Result<HashMap<OutPoint, Output>, Error> {
-        todo!();
+    pub fn set_seed(&self, seed: [u8; 64]) -> Result<(), Error> {
+        let mut txn = self.env.write_txn()?;
+        self.seed.put(&mut txn, &0, &seed)?;
+        self.address_to_index.clear(&mut txn)?;
+        self.index_to_address.clear(&mut txn)?;
+        self.utxos.clear(&mut txn)?;
+        txn.commit()?;
+        Ok(())
+    }
+
+    pub fn create_transaction(
+        &self,
+        address: Address,
+        amount: u64,
+        fee: u64,
+    ) -> Result<Transaction, Error> {
+        let (total, coins) = self.select_coins(amount + fee)?;
+        let change = total - amount - fee;
+        let inputs = coins.into_keys().collect();
+        let outputs = vec![
+            Output {
+                address,
+                content: sdk_types::Content::Value(amount),
+            },
+            Output {
+                address: self.get_new_address()?,
+                content: sdk_types::Content::Value(change),
+            },
+        ];
+        Ok(Transaction { inputs, outputs })
+    }
+
+    pub fn select_coins(&self, amount: u64) -> Result<(u64, HashMap<OutPoint, Output>), Error> {
+        let txn = self.env.read_txn()?;
+        let mut utxos = vec![];
+        for item in self.utxos.iter(&txn)? {
+            utxos.push(item?);
+        }
+        utxos.sort_unstable_by_key(|(_, output)| output.get_value());
+
+        let mut selected = HashMap::new();
+        let mut total: u64 = 0;
+        for (outpoint, output) in &utxos {
+            if total > amount {
+                break;
+            }
+            total += output.get_value();
+            selected.insert(*outpoint, output.clone());
+        }
+        if total < amount {
+            return Err(Error::NotEnoughFunds);
+        }
+        return Ok((total, selected));
+    }
+
+    pub fn delete_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error> {
+        let mut txn = self.env.write_txn()?;
+        for outpoint in outpoints {
+            self.utxos.delete(&mut txn, outpoint)?;
+        }
+        txn.commit()?;
+        Ok(())
     }
 
     pub fn put_utxos(&self, utxos: &HashMap<OutPoint, Output>) -> Result<(), Error> {
@@ -69,6 +121,16 @@ impl Wallet {
         Ok(balance)
     }
 
+    pub fn get_utxos(&self) -> Result<HashMap<OutPoint, Output>, Error> {
+        let txn = self.env.read_txn()?;
+        let mut utxos = HashMap::new();
+        for item in self.utxos.iter(&txn)? {
+            let (outpoint, output) = item?;
+            utxos.insert(outpoint, output);
+        }
+        Ok(utxos)
+    }
+
     pub fn get_addresses(&self) -> Result<HashSet<Address>, Error> {
         let txn = self.env.read_txn()?;
         let mut addresses = HashSet::new();
@@ -79,21 +141,18 @@ impl Wallet {
         Ok(addresses)
     }
 
-    pub fn authorize(
-        &self,
-        txn: &RoTxn,
-        transaction: Transaction,
-    ) -> Result<AuthorizedTransaction, Error> {
+    pub fn authorize(&self, transaction: Transaction) -> Result<AuthorizedTransaction, Error> {
+        let txn = self.env.read_txn()?;
         let mut authorizations = vec![];
         for input in &transaction.inputs {
-            let spent_utxo = self.utxos.get(txn, input)?.ok_or(Error::NoUtxo)?;
-            let index =
-                self.address_to_index
-                    .get(txn, &spent_utxo.address)?
-                    .ok_or(Error::NoIndex {
-                        address: spent_utxo.address,
-                    })?;
-            let keypair = self.get_keypair(txn, index)?;
+            let spent_utxo = self.utxos.get(&txn, input)?.ok_or(Error::NoUtxo)?;
+            let index = self
+                .address_to_index
+                .get(&txn, &spent_utxo.address)?
+                .ok_or(Error::NoIndex {
+                    address: spent_utxo.address,
+                })?;
+            let keypair = self.get_keypair(&txn, index)?;
             let signature = sdk_authorization_ed25519_dalek::sign(&keypair, &transaction)?;
             authorizations.push(Authorization {
                 public_key: keypair.public,
@@ -155,4 +214,6 @@ pub enum Error {
     Authorization(#[from] sdk_authorization_ed25519_dalek::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
+    #[error("not enough funds")]
+    NotEnoughFunds,
 }

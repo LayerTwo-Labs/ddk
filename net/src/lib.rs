@@ -1,12 +1,11 @@
 use anyhow::Result;
-use plain_types::sdk_types::BlockHash;
 use plain_types::{AuthorizedTransaction, Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 pub use quinn;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::{net::SocketAddr, sync::Arc};
 
 pub const READ_LIMIT: usize = 1024;

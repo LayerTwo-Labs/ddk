@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use sdk_api::node::node_server::NodeServer;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
 use tonic::transport::Server;
 
 #[tokio::main]
@@ -13,7 +13,10 @@ async fn main() -> Result<()> {
     let net_port = args.netport.unwrap_or(DEFAULT_NET_PORT);
     let rpc_addr = format!("[::1]:{rpc_port}").parse()?;
     let net_addr: SocketAddr = format!("127.0.0.1:{net_port}").parse()?;
-    let mut node = plain_node::Node::new(net_addr, "localhost", 18443)?;
+    let datadir = args
+        .datadir
+        .unwrap_or(project_root::get_project_root()?.join("target/plain"));
+    let mut node = plain_node::Node::new(&datadir, net_addr, "localhost", 18443)?;
     node.run()?;
     let api = plain_api::PlainApi::new(node.clone());
     println!("RPC server is running on {rpc_addr}");
@@ -35,4 +38,7 @@ pub struct Cli {
     /// RPC port.
     #[arg(short, long)]
     pub rpcport: Option<u16>,
+    /// Directory for storing block data, headers, config file.
+    #[arg(short, long)]
+    pub datadir: Option<PathBuf>,
 }

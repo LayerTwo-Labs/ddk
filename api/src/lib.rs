@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use plain_types::sdk_types::Address;
+use plain_types::sdk_types::GetValue;
+use plain_types::sdk_types::OutPoint;
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
@@ -72,13 +74,30 @@ impl Node for PlainApi {
             .mempool
             .take(&txn, TAKE_NUMBER)
             .map_err(Error::from)?;
-        let mut serialized_transactions = vec![];
+        let mut fee: u64 = 0;
         for transaction in &transactions {
-            let serrialized_transaction = bincode::serialize(&transaction).map_err(Error::from)?;
-            serialized_transactions.push(serrialized_transaction);
+            let filled_transaction = self
+                .node
+                .state
+                .fill_transaction(&txn, &transaction.transaction)
+                .map_err(Error::from)?;
+            let value_in: u64 = filled_transaction
+                .spent_utxos
+                .iter()
+                .map(GetValue::get_value)
+                .sum();
+            let value_out: u64 = filled_transaction
+                .transaction
+                .outputs
+                .iter()
+                .map(GetValue::get_value)
+                .sum();
+            fee += value_in - value_out;
         }
+        let serialized_transactions = bincode::serialize(&transactions).map_err(Error::from)?;
         return Ok(Response::new(GetTransactionsResponse {
             transactions: serialized_transactions,
+            fee,
         }));
     }
 
@@ -145,6 +164,17 @@ impl Node for PlainApi {
         let utxos = bincode::serialize(&utxos).map_err(Error::from)?;
         Ok(Response::new(GetUtxosByAddressesResponse { utxos }))
     }
+
+    async fn get_spent_utxos(
+        &self,
+        request: Request<GetSpentUtxosRequest>,
+    ) -> Result<Response<GetSpentUtxosResponse>, Status> {
+        let outpoints: Vec<OutPoint> =
+            bincode::deserialize(&request.into_inner().outpoints).map_err(Error::from)?;
+        let spent = self.node.get_spent_utxos(&outpoints).map_err(Error::from)?;
+        let spent_outpoints = bincode::serialize(&spent).map_err(Error::from)?;
+        Ok(Response::new(GetSpentUtxosResponse { spent_outpoints }))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -167,6 +197,6 @@ pub enum Error {
 
 impl From<Error> for Status {
     fn from(err: Error) -> Self {
-        Self::internal(format!("{}", err))
+        Self::internal(format!("{:?}", err))
     }
 }
