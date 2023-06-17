@@ -119,7 +119,7 @@ pub trait Main {
         nsidechain: u32,
         // Raw transaction hex.
         rawtx: &str,
-    ) -> Result<(), jsonrpsee::core::Error>;
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 }
 
 // Arguments:

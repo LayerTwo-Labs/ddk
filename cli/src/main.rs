@@ -2,16 +2,16 @@ use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use sdk_api::{
-    node::{node_client::NodeClient, *},
-    tonic::Request,
-};
 use plain_miner::Miner;
 use plain_types::{
     bitcoin::{self, Amount},
     sdk_types::{self, GetValue},
     sdk_types::{Address, BlockHash, OutPoint},
     AuthorizedTransaction, Body, Header, Output,
+};
+use sdk_api::{
+    node::{node_client::NodeClient, *},
+    tonic::Request,
 };
 
 #[tokio::main]
@@ -95,12 +95,30 @@ async fn main() -> Result<()> {
                 for (outpoint, output) in &utxos {
                     println!("outpoint: {outpoint}");
                     println!("address: {}", output.address,);
-                    println!("value: {}", Amount::from_sat(output.get_value()));
+                    println!("content: {:?}", output.content);
                     println!();
                 }
             }
-            Wallet::Send { to, amount, fee } => {
-                let transaction = wallet.create_transaction(to, amount.to_sat(), fee.to_sat())?;
+            Wallet::Send { to, value, fee } => {
+                let transaction = wallet.create_transaction(to, value.to_sat(), fee.to_sat())?;
+                let transaction = wallet.authorize(transaction)?;
+                dbg!(&transaction);
+                let transaction = bincode::serialize(&transaction)?;
+                let request = Request::new(SubmitTransactionRequest { transaction });
+                client.submit_transaction(request).await?;
+            }
+            Wallet::Withdraw {
+                to,
+                value,
+                main_fee,
+                fee,
+            } => {
+                let transaction = wallet.create_withdrawal(
+                    to,
+                    value.to_sat(),
+                    main_fee.to_sat(),
+                    fee.to_sat(),
+                )?;
                 let transaction = wallet.authorize(transaction)?;
                 dbg!(&transaction);
                 let transaction = bincode::serialize(&transaction)?;
@@ -130,8 +148,8 @@ async fn main() -> Result<()> {
             }
         },
         Command::Bmm(bmm) => match bmm {
-            Bmm::Attempt { amount } => {
-                println!("attempting BMM with {amount}");
+            Bmm::Attempt { value } => {
+                println!("attempting BMM with {value}");
                 let request = Request::new(GetTransactionsRequest {});
                 let transactions = client.get_transactions(request).await?.into_inner();
                 let fee = transactions.fee;
@@ -160,7 +178,7 @@ async fn main() -> Result<()> {
                     prev_side_hash,
                     prev_main_hash,
                 };
-                miner.attempt_bmm(amount.to_sat(), 0, header, body).await?;
+                miner.attempt_bmm(value.to_sat(), 0, header, body).await?;
                 loop {
                     if let Some((header, body)) = miner.confirm_bmm().await.unwrap_or_else(|err| {
                         // dbg!(err);
@@ -177,7 +195,7 @@ async fn main() -> Result<()> {
                 }
             }
             Bmm::Confirm => println!("confirming BMM"),
-            Bmm::Generate { amount } => println!("creating a block with {amount}"),
+            Bmm::Generate { value } => println!("creating a block with {value}"),
         },
     }
     Ok(())
@@ -235,9 +253,18 @@ pub enum Wallet {
     Send {
         to: Address,
         #[arg(value_parser = btc_amount_parser)]
-        amount: Amount,
+        value: Amount,
         #[arg(value_parser = btc_amount_parser)]
         fee: Amount,
+    },
+    Withdraw {
+        to: bitcoin::Address,
+        #[arg(value_parser = btc_amount_parser)]
+        value: Amount,
+        #[arg(value_parser = btc_amount_parser)]
+        fee: Amount,
+        #[arg(value_parser = btc_amount_parser)]
+        main_fee: Amount,
     },
 }
 
@@ -253,17 +280,17 @@ pub enum Chain {
 pub enum Bmm {
     /// Create a bmm request.
     Attempt {
-        /// Amount to be paid to mainchain miners for including the bmm commitment.
+        /// Value to be paid to mainchain miners for including the bmm commitment.
         #[arg(value_parser = btc_amount_parser)]
-        amount: bitcoin::Amount,
+        value: bitcoin::Amount,
     },
     /// Check if the bmm request was successful, and then connect the block.
     Confirm,
     /// Create a bmm request, generate a mainchain block (only works in regtest mode), confirm bmm.
     Generate {
-        /// Amount to be paid to mainchain miners for including the bmm commitment.
+        /// Value to be paid to mainchain miners for including the bmm commitment.
         #[arg(value_parser = btc_amount_parser)]
-        amount: bitcoin::Amount,
+        value: bitcoin::Amount,
     },
 }
 

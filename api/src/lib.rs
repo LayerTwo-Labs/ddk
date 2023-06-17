@@ -4,11 +4,11 @@ use std::net::SocketAddr;
 use plain_types::sdk_types::Address;
 use plain_types::sdk_types::GetValue;
 use plain_types::sdk_types::OutPoint;
+pub use sdk_api;
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
 use tonic::{Request, Response, Status};
-pub use sdk_api;
 
 pub struct PlainApi {
     node: plain_node::Node,
@@ -67,33 +67,11 @@ impl Node for PlainApi {
         &self,
         _request: Request<GetTransactionsRequest>,
     ) -> Result<Response<GetTransactionsResponse>, Status> {
-        let txn = self.node.env.read_txn().map_err(Error::from)?;
-        const TAKE_NUMBER: usize = 100;
-        let transactions = self
+        const NUM_TRANSACTIONS: usize = 100;
+        let (transactions, fee) = self
             .node
-            .mempool
-            .take(&txn, TAKE_NUMBER)
+            .get_transactions(NUM_TRANSACTIONS)
             .map_err(Error::from)?;
-        let mut fee: u64 = 0;
-        for transaction in &transactions {
-            let filled_transaction = self
-                .node
-                .state
-                .fill_transaction(&txn, &transaction.transaction)
-                .map_err(Error::from)?;
-            let value_in: u64 = filled_transaction
-                .spent_utxos
-                .iter()
-                .map(GetValue::get_value)
-                .sum();
-            let value_out: u64 = filled_transaction
-                .transaction
-                .outputs
-                .iter()
-                .map(GetValue::get_value)
-                .sum();
-            fee += value_in - value_out;
-        }
         let serialized_transactions = bincode::serialize(&transactions).map_err(Error::from)?;
         return Ok(Response::new(GetTransactionsResponse {
             transactions: serialized_transactions,

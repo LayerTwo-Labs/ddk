@@ -82,6 +82,10 @@ impl Drivechain {
                 }
             }
             let total = transaction.output[deposit.nburnindex].value;
+            if total < last_total {
+                last_total = total;
+                continue;
+            }
             let value = total - last_total;
             let address: Address = deposit.strdest.parse()?;
             let output = Output {

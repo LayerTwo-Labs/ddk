@@ -2,7 +2,7 @@
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_types::{Address, GetAddress};
+use plain_types::sdk_types::{Address, Content, GetAddress};
 use plain_types::{sdk_authorization_ed25519_dalek, sdk_types, TwoWayPegData};
 use plain_types::{sdk_types::OutPoint, *};
 use sdk_types::GetValue as _;
@@ -11,17 +11,27 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone)]
 pub struct State {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output>>,
+
+    pub last_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle>>,
+    pub last_withdrawal_bundle_failure_height: Database<OwnedType<u32>, OwnedType<u32>>,
     pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
 }
 
 impl State {
-    pub const NUM_DBS: u32 = 2;
+    pub const NUM_DBS: u32 = 5;
+    pub const WITHDRAWAL_BUNDLE_FAILURE_GAP: u32 = 4;
 
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
         let utxos = env.create_database(Some("utxos"))?;
+
+        let last_withdrawal_bundle = env.create_database(Some("last_withdrawal_bundle"))?;
+        let last_withdrawal_bundle_failure_height =
+            env.create_database(Some("last_withdrawal_bundle_failure_height"))?;
         let last_deposit_block = env.create_database(Some("last_deposit_block"))?;
         Ok(Self {
             utxos,
+            last_withdrawal_bundle,
+            last_withdrawal_bundle_failure_height,
             last_deposit_block,
         })
     }
@@ -89,6 +99,151 @@ impl State {
         })
     }
 
+    fn collect_withdrawal_bundle(
+        &self,
+        txn: &RoTxn,
+        block_height: u32,
+    ) -> Result<Option<WithdrawalBundle>, Error> {
+        use bitcoin::blockdata::{opcodes, script};
+        // Weight of a bundle with 0 outputs.
+        const BUNDLE_0_WEIGHT: usize = 504;
+        // Weight of a single output.
+        const OUTPUT_WEIGHT: usize = 128;
+        // Turns out to be 3121.
+        const MAX_BUNDLE_OUTPUTS: usize =
+            (bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize - BUNDLE_0_WEIGHT) / OUTPUT_WEIGHT;
+
+        // Aggregate all outputs by destination.
+        // destination -> (value, mainchain fee, spent_utxos)
+        let mut address_to_aggregated_withdrawal =
+            HashMap::<bitcoin::Address, AggregatedWithdrawal>::new();
+        for item in self.utxos.iter(txn)? {
+            let (outpoint, output) = item?;
+            if let Content::Withdrawal {
+                value,
+                ref main_address,
+                main_fee,
+            } = output.content
+            {
+                let aggregated = address_to_aggregated_withdrawal
+                    .entry(main_address.clone())
+                    .or_insert(AggregatedWithdrawal {
+                        spent_utxos: HashMap::new(),
+                        main_address: main_address.clone(),
+                        value: 0,
+                        main_fee: 0,
+                    });
+                // Add up all values.
+                aggregated.value += value;
+                // Set maximum mainchain fee.
+                if main_fee > aggregated.main_fee {
+                    aggregated.main_fee = main_fee;
+                }
+                aggregated.spent_utxos.insert(outpoint, output);
+            }
+        }
+        if address_to_aggregated_withdrawal.is_empty() {
+            return Ok(None);
+        }
+        let mut aggregated_withdrawals: Vec<_> =
+            address_to_aggregated_withdrawal.into_values().collect();
+        aggregated_withdrawals.sort_by_key(|a| std::cmp::Reverse(a.clone()));
+        let mut fee = 0;
+        let mut spent_utxos = HashMap::<OutPoint, Output>::new();
+        let mut bundle_outputs = vec![];
+        for aggregated in &aggregated_withdrawals {
+            if bundle_outputs.len() > MAX_BUNDLE_OUTPUTS {
+                break;
+            }
+            let bundle_output = bitcoin::TxOut {
+                value: aggregated.value,
+                script_pubkey: aggregated.main_address.script_pubkey(),
+            };
+            spent_utxos.extend(aggregated.spent_utxos.clone());
+            bundle_outputs.push(bundle_output);
+            fee += aggregated.main_fee;
+        }
+        let txin = bitcoin::TxIn {
+            script_sig: script::Builder::new()
+                // OP_FALSE == OP_0
+                .push_opcode(opcodes::OP_FALSE)
+                .into_script(),
+            ..bitcoin::TxIn::default()
+        };
+        // Create return dest output.
+        // The destination string for the change of a WT^
+        const SIDECHAIN_WTPRIME_RETURN_DEST: &[u8] = b"D";
+        let script = script::Builder::new()
+            .push_opcode(opcodes::all::OP_RETURN)
+            .push_slice(SIDECHAIN_WTPRIME_RETURN_DEST)
+            .into_script();
+        let return_dest_txout = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: script,
+        };
+        // Create mainchain fee output.
+        let script = script::Builder::new()
+            .push_opcode(opcodes::all::OP_RETURN)
+            .push_slice(fee.to_le_bytes().as_ref())
+            .into_script();
+        let mainchain_fee_txout = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: script,
+        };
+        // Create inputs commitment.
+        let inputs: Vec<OutPoint> = [
+            // Commit to inputs.
+            spent_utxos.keys().copied().collect(),
+            // Commit to block height.
+            vec![OutPoint::Regular {
+                txid: [0; 32].into(),
+                vout: block_height,
+            }],
+        ]
+        .concat();
+        let commitment = sdk_types::hash(&inputs);
+        let script = script::Builder::new()
+            .push_opcode(opcodes::all::OP_RETURN)
+            .push_slice(&commitment)
+            .into_script();
+        let inputs_commitment_txout = bitcoin::TxOut {
+            value: 0,
+            script_pubkey: script,
+        };
+        let transaction = bitcoin::Transaction {
+            version: 2,
+            lock_time: bitcoin::PackedLockTime(0),
+            input: vec![txin],
+            output: [
+                vec![
+                    return_dest_txout,
+                    mainchain_fee_txout,
+                    inputs_commitment_txout,
+                ],
+                bundle_outputs,
+            ]
+            .concat(),
+        };
+        if transaction.weight() > bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize {
+            Err(Error::BundleTooHeavy {
+                weight: transaction.weight(),
+                max_weight: bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize,
+            })?;
+        }
+        dbg!(&transaction);
+        Ok(Some(WithdrawalBundle {
+            spent_utxos,
+            transaction,
+        }))
+    }
+
+    pub fn get_pending_withdrawal_bundle(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<Option<WithdrawalBundle>, Error> {
+        Ok(self.last_withdrawal_bundle.get(txn, &0)?)
+    }
+
     fn validate_filled_transaction(&self, transaction: &FilledTransaction) -> Result<u64, Error> {
         let mut value_in: u64 = 0;
         let mut value_out: u64 = 0;
@@ -136,6 +291,7 @@ impl State {
                 return Err(Error::WrongPubKeyForAddress);
             }
         }
+        sdk_authorization_ed25519_dalek::verify_authorizations(body)?;
         Ok(total_fees)
     }
 
@@ -150,6 +306,7 @@ impl State {
         &self,
         txn: &mut RwTxn,
         two_way_peg_data: &TwoWayPegData,
+        block_height: u32,
     ) -> Result<(), Error> {
         // Handle deposits.
         if let Some(deposit_block_hash) = two_way_peg_data.deposit_block_hash {
@@ -157,6 +314,46 @@ impl State {
         }
         for (outpoint, deposit) in &two_way_peg_data.deposits {
             self.utxos.put(txn, outpoint, deposit)?;
+        }
+
+        // Handle withdrawals.
+        let last_withdrawal_bundle_failure_height = self
+            .last_withdrawal_bundle_failure_height
+            .get(txn, &0)?
+            .unwrap_or(0);
+        if (block_height + 1) - last_withdrawal_bundle_failure_height
+            > Self::WITHDRAWAL_BUNDLE_FAILURE_GAP
+        {
+            if let Some(bundle) = self.collect_withdrawal_bundle(txn, block_height + 1)? {
+                dbg!(&bundle);
+                for outpoint in bundle.spent_utxos.keys() {
+                    self.utxos.delete(txn, outpoint)?;
+                }
+                self.last_withdrawal_bundle.put(txn, &0, &bundle)?;
+            }
+        }
+        for (txid, status) in &two_way_peg_data.bundle_statuses {
+            if let Some(bundle) = self.last_withdrawal_bundle.get(txn, &0)? {
+                if bundle.transaction.txid() != *txid {
+                    continue;
+                }
+                match status {
+                    WithdrawalBundleStatus::Failed => {
+                        self.last_withdrawal_bundle_failure_height.put(
+                            txn,
+                            &0,
+                            &(block_height + 1),
+                        )?;
+                        self.last_withdrawal_bundle.delete(txn, &0)?;
+                        for (outpoint, output) in &bundle.spent_utxos {
+                            self.utxos.put(txn, outpoint, output)?;
+                        }
+                    }
+                    WithdrawalBundleStatus::Confirmed => {
+                        self.last_withdrawal_bundle.delete(txn, &0)?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -206,4 +403,6 @@ pub enum Error {
     UtxoDoubleSpent,
     #[error("wrong public key for address")]
     WrongPubKeyForAddress,
+    #[error("bundle too heavy {weight} > {max_weight}")]
+    BundleTooHeavy { weight: usize, max_weight: usize },
 }

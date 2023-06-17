@@ -1,6 +1,6 @@
 use plain_net::{PeerState, Request, Response};
 use plain_types::{
-    sdk_types::{Address, OutPoint},
+    sdk_types::{Address, GetValue, OutPoint},
     *,
 };
 use std::{
@@ -94,11 +94,47 @@ impl Node {
         Ok(utxos)
     }
 
+    pub fn get_transactions(
+        &self,
+        number: usize,
+    ) -> Result<(Vec<AuthorizedTransaction>, u64), Error> {
+        let mut txn = self.env.write_txn().map_err(Error::from)?;
+        let transactions = self.mempool.take(&txn, number).map_err(Error::from)?;
+        let mut fee: u64 = 0;
+        let mut returned_transactions = vec![];
+        for transaction in &transactions {
+            if self.state.validate_transaction(&txn, transaction).is_err() {
+                self.mempool
+                    .delete(&mut txn, &transaction.transaction.txid())?;
+                continue;
+            }
+            let filled_transaction = self
+                .state
+                .fill_transaction(&txn, &transaction.transaction)
+                .map_err(Error::from)?;
+            let value_in: u64 = filled_transaction
+                .spent_utxos
+                .iter()
+                .map(GetValue::get_value)
+                .sum();
+            let value_out: u64 = filled_transaction
+                .transaction
+                .outputs
+                .iter()
+                .map(GetValue::get_value)
+                .sum();
+            fee += value_in - value_out;
+            returned_transactions.push(transaction.clone());
+        }
+        Ok((returned_transactions, fee))
+    }
+
     pub async fn submit_block(&self, header: &Header, body: &Body) -> Result<(), Error> {
         let last_deposit_block_hash = {
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
         };
+        let mut bundle = None;
         {
             let two_way_peg_data = self
                 .drivechain
@@ -107,13 +143,24 @@ impl Node {
             let mut txn = self.env.write_txn()?;
             self.state.validate_body(&txn, &body)?;
             self.state.connect_body(&mut txn, &body)?;
+            let height = self.archive.get_height(&txn)?;
             self.state
-                .connect_two_way_peg_data(&mut txn, &two_way_peg_data)?;
+                .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
+            bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
             self.archive.append_header(&mut txn, &header)?;
             self.archive.put_body(&mut txn, &header, &body)?;
+            for transaction in &body.transactions {
+                self.mempool.delete(&mut txn, &transaction.txid())?;
+            }
             dbg!(&two_way_peg_data);
             dbg!(self.state.get_utxos(&txn)?);
             txn.commit().map_err(Error::from)?;
+        }
+        if let Some(bundle) = bundle {
+            let _ = self
+                .drivechain
+                .broadcast_withdrawal_bundle(bundle.transaction)
+                .await;
         }
         Ok(())
     }

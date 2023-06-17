@@ -48,19 +48,24 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn create_transaction(
+    pub fn create_withdrawal(
         &self,
-        address: Address,
-        amount: u64,
+        main_address: bitcoin::Address,
+        value: u64,
+        main_fee: u64,
         fee: u64,
     ) -> Result<Transaction, Error> {
-        let (total, coins) = self.select_coins(amount + fee)?;
-        let change = total - amount - fee;
+        let (total, coins) = self.select_coins(value + fee + main_fee)?;
+        let change = total - value - fee;
         let inputs = coins.into_keys().collect();
         let outputs = vec![
             Output {
-                address,
-                content: sdk_types::Content::Value(amount),
+                address: self.get_new_address()?,
+                content: sdk_types::Content::Withdrawal {
+                    value,
+                    main_fee,
+                    main_address,
+                },
             },
             Output {
                 address: self.get_new_address()?,
@@ -70,7 +75,29 @@ impl Wallet {
         Ok(Transaction { inputs, outputs })
     }
 
-    pub fn select_coins(&self, amount: u64) -> Result<(u64, HashMap<OutPoint, Output>), Error> {
+    pub fn create_transaction(
+        &self,
+        address: Address,
+        value: u64,
+        fee: u64,
+    ) -> Result<Transaction, Error> {
+        let (total, coins) = self.select_coins(value + fee)?;
+        let change = total - value - fee;
+        let inputs = coins.into_keys().collect();
+        let outputs = vec![
+            Output {
+                address,
+                content: sdk_types::Content::Value(value),
+            },
+            Output {
+                address: self.get_new_address()?,
+                content: sdk_types::Content::Value(change),
+            },
+        ];
+        Ok(Transaction { inputs, outputs })
+    }
+
+    pub fn select_coins(&self, value: u64) -> Result<(u64, HashMap<OutPoint, Output>), Error> {
         let txn = self.env.read_txn()?;
         let mut utxos = vec![];
         for item in self.utxos.iter(&txn)? {
@@ -81,13 +108,16 @@ impl Wallet {
         let mut selected = HashMap::new();
         let mut total: u64 = 0;
         for (outpoint, output) in &utxos {
-            if total > amount {
+            if output.content.is_withdrawal() {
+                continue;
+            }
+            if total > value {
                 break;
             }
             total += output.get_value();
             selected.insert(*outpoint, output.clone());
         }
-        if total < amount {
+        if total < value {
             return Err(Error::NotEnoughFunds);
         }
         return Ok((total, selected));
