@@ -5,7 +5,7 @@ use sdk_types::bitcoin;
 use std::str::FromStr as _;
 
 pub struct Miner {
-    pub drivechain: Drivechain,
+    pub drivechain: Drivechain<()>,
     block: Option<(Header, Body)>,
     sidechain_number: u32,
 }

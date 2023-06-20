@@ -14,10 +14,10 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct Node {
     pub net: plain_net::Net,
-    pub state: plain_state::State,
+    pub state: plain_state::State<sdk_authorization_ed25519_dalek::Authorization, ()>,
     pub archive: plain_archive::Archive,
     pub mempool: plain_mempool::MemPool,
-    pub drivechain: plain_drivechain::Drivechain,
+    pub drivechain: plain_drivechain::Drivechain<()>,
     pub env: heed::Env,
 }
 
@@ -34,7 +34,7 @@ impl Node {
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(
-                plain_state::State::NUM_DBS
+                plain_state::State::<sdk_authorization_ed25519_dalek::Authorization, ()>::NUM_DBS
                     + plain_archive::Archive::NUM_DBS
                     + plain_mempool::MemPool::NUM_DBS,
             )

@@ -10,6 +10,7 @@ thiserror = "1.0.40"
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 plain_types = { path = "../types" }
 anyhow = "1.0.71"
+serde = { version = "1.0.164", features = ["derive"] }
 
 [dev-dependencies]
 bincode = "1.3.3"

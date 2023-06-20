@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sdk_types = { git = "https://github.com/nchashch/sdk_types" }
-sdk_authorization_ed25519_dalek = { git = "https://github.com/nchashch/sdk_authorization_ed25519_dalek" }
+# sdk_types = { git = "https://github.com/nchashch/sdk_types" }
+# sdk_authorization_ed25519_dalek = { git = "https://github.com/nchashch/sdk_authorization_ed25519_dalek" }
+sdk_types = { path = "../../sdk_types" }
+sdk_authorization_ed25519_dalek = { path = "../../sdk_authorization_ed25519_dalek" }
 serde = { version = "1.0.163", features = ["derive"] }

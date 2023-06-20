@@ -3,7 +3,7 @@ use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::sdk_authorization_ed25519_dalek::{get_address, Authorization};
 use plain_types::sdk_types::{Address, GetValue, OutPoint};
-use plain_types::{sdk_types::GetValue as _, *};
+use plain_types::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 

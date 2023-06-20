@@ -33,14 +33,14 @@ pub enum WithdrawalBundleStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WithdrawalBundle {
-    pub spent_utxos: HashMap<sdk_types::OutPoint, Output>,
+pub struct WithdrawalBundle<C> {
+    pub spent_utxos: HashMap<sdk_types::OutPoint, sdk_types::Output<C>>,
     pub transaction: bitcoin::Transaction,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TwoWayPegData {
-    pub deposits: HashMap<sdk_types::OutPoint, Output>,
+pub struct TwoWayPegData<C> {
+    pub deposits: HashMap<sdk_types::OutPoint, sdk_types::Output<C>>,
     pub deposit_block_hash: Option<bitcoin::BlockHash>,
     pub bundle_statuses: HashMap<bitcoin::Txid, WithdrawalBundleStatus>,
 }
@@ -56,14 +56,14 @@ pub struct DisconnectData {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct AggregatedWithdrawal {
-    pub spent_utxos: HashMap<OutPoint, Output>,
+pub struct AggregatedWithdrawal<C> {
+    pub spent_utxos: HashMap<OutPoint, sdk_types::Output<C>>,
     pub main_address: bitcoin::Address,
     pub value: u64,
     pub main_fee: u64,
 }
 
-impl Ord for AggregatedWithdrawal {
+impl<C: std::cmp::Eq> Ord for AggregatedWithdrawal<C> {
     fn cmp(&self, other: &Self) -> Ordering {
         if self == other {
             Ordering::Equal
@@ -78,7 +78,7 @@ impl Ord for AggregatedWithdrawal {
     }
 }
 
-impl PartialOrd for AggregatedWithdrawal {
+impl<C: std::cmp::Eq> PartialOrd for AggregatedWithdrawal<C> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }

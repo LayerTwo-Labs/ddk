@@ -2,22 +2,32 @@
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_types::{Address, Content, GetAddress};
+use plain_types::sdk_types::{Address, Content, GetAddress, GetValue};
 use plain_types::{sdk_authorization_ed25519_dalek, sdk_types, TwoWayPegData};
 use plain_types::{sdk_types::OutPoint, *};
 use sdk_types::GetValue as _;
+use sdk_types::{AuthorizedTransaction, Body, FilledTransaction, Output, Transaction};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::marker::PhantomData;
 
 #[derive(Clone)]
-pub struct State {
-    pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output>>,
-
-    pub last_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle>>,
+pub struct State<A, C> {
+    pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
+    pub last_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
     pub last_withdrawal_bundle_failure_height: Database<OwnedType<u32>, OwnedType<u32>>,
     pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
+    pub _body: PhantomData<A>,
 }
 
-impl State {
+impl<
+        A: sdk_types::Verify<C> + GetAddress,
+        C: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
+    > State<A, C>
+where
+    Error: From<<A as sdk_types::Verify<C>>::Error>,
+{
     pub const NUM_DBS: u32 = 5;
     pub const WITHDRAWAL_BUNDLE_FAILURE_GAP: u32 = 4;
 
@@ -33,10 +43,11 @@ impl State {
             last_withdrawal_bundle,
             last_withdrawal_bundle_failure_height,
             last_deposit_block,
+            _body: PhantomData::default(),
         })
     }
 
-    pub fn get_utxos(&self, txn: &RoTxn) -> Result<HashMap<OutPoint, Output>, Error> {
+    pub fn get_utxos(&self, txn: &RoTxn) -> Result<HashMap<OutPoint, Output<C>>, Error> {
         let mut utxos = HashMap::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -49,7 +60,7 @@ impl State {
         &self,
         txn: &RoTxn,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output>, Error> {
+    ) -> Result<HashMap<OutPoint, Output<C>>, Error> {
         let mut utxos = HashMap::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -63,7 +74,7 @@ impl State {
     pub fn validate_transaction(
         &self,
         txn: &RoTxn,
-        transaction: &AuthorizedTransaction,
+        transaction: &AuthorizedTransaction<A, C>,
     ) -> Result<u64, Error> {
         let filled_transaction = self.fill_transaction(txn, &transaction.transaction)?;
         for (authorization, spent_utxo) in transaction
@@ -75,7 +86,8 @@ impl State {
                 return Err(Error::WrongPubKeyForAddress);
             }
         }
-        sdk_authorization_ed25519_dalek::verify_authorized_transaction(&transaction)?;
+        A::verify_transaction(transaction)?;
+        // sdk_authorization_ed25519_dalek::verify_authorized_transaction(transaction)?;
         let fee = self.validate_filled_transaction(&filled_transaction)?;
         Ok(fee)
     }
@@ -83,8 +95,8 @@ impl State {
     pub fn fill_transaction(
         &self,
         txn: &RoTxn,
-        transaction: &Transaction,
-    ) -> Result<FilledTransaction, Error> {
+        transaction: &Transaction<C>,
+    ) -> Result<FilledTransaction<C>, Error> {
         let mut spent_utxos = vec![];
         for input in &transaction.inputs {
             let utxo = self
@@ -103,7 +115,7 @@ impl State {
         &self,
         txn: &RoTxn,
         block_height: u32,
-    ) -> Result<Option<WithdrawalBundle>, Error> {
+    ) -> Result<Option<WithdrawalBundle<C>>, Error> {
         use bitcoin::blockdata::{opcodes, script};
         // Weight of a bundle with 0 outputs.
         const BUNDLE_0_WEIGHT: usize = 504;
@@ -116,7 +128,7 @@ impl State {
         // Aggregate all outputs by destination.
         // destination -> (value, mainchain fee, spent_utxos)
         let mut address_to_aggregated_withdrawal =
-            HashMap::<bitcoin::Address, AggregatedWithdrawal>::new();
+            HashMap::<bitcoin::Address, AggregatedWithdrawal<C>>::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
             if let Content::Withdrawal {
@@ -149,7 +161,7 @@ impl State {
             address_to_aggregated_withdrawal.into_values().collect();
         aggregated_withdrawals.sort_by_key(|a| std::cmp::Reverse(a.clone()));
         let mut fee = 0;
-        let mut spent_utxos = HashMap::<OutPoint, Output>::new();
+        let mut spent_utxos = HashMap::<OutPoint, Output<C>>::new();
         let mut bundle_outputs = vec![];
         for aggregated in &aggregated_withdrawals {
             if bundle_outputs.len() > MAX_BUNDLE_OUTPUTS {
@@ -240,11 +252,14 @@ impl State {
     pub fn get_pending_withdrawal_bundle(
         &self,
         txn: &RoTxn,
-    ) -> Result<Option<WithdrawalBundle>, Error> {
+    ) -> Result<Option<WithdrawalBundle<C>>, Error> {
         Ok(self.last_withdrawal_bundle.get(txn, &0)?)
     }
 
-    fn validate_filled_transaction(&self, transaction: &FilledTransaction) -> Result<u64, Error> {
+    fn validate_filled_transaction(
+        &self,
+        transaction: &FilledTransaction<C>,
+    ) -> Result<u64, Error> {
         let mut value_in: u64 = 0;
         let mut value_out: u64 = 0;
         for utxo in &transaction.spent_utxos {
@@ -259,7 +274,7 @@ impl State {
         Ok(value_in - value_out)
     }
 
-    pub fn validate_body(&self, txn: &RoTxn, body: &Body) -> Result<u64, Error> {
+    pub fn validate_body(&self, txn: &RoTxn, body: &Body<A, C>) -> Result<u64, Error> {
         let mut coinbase_value: u64 = 0;
         for output in &body.coinbase {
             coinbase_value += output.get_value();
@@ -291,7 +306,8 @@ impl State {
                 return Err(Error::WrongPubKeyForAddress);
             }
         }
-        sdk_authorization_ed25519_dalek::verify_authorizations(body)?;
+        // sdk_authorization_ed25519_dalek::verify_authorizations(body)?;
+        A::verify_body(body)?;
         Ok(total_fees)
     }
 
@@ -305,7 +321,7 @@ impl State {
     pub fn connect_two_way_peg_data(
         &self,
         txn: &mut RwTxn,
-        two_way_peg_data: &TwoWayPegData,
+        two_way_peg_data: &TwoWayPegData<C>,
         block_height: u32,
     ) -> Result<(), Error> {
         // Handle deposits.
@@ -358,7 +374,7 @@ impl State {
         Ok(())
     }
 
-    pub fn connect_body(&self, txn: &mut RwTxn, body: &Body) -> Result<(), Error> {
+    pub fn connect_body(&self, txn: &mut RwTxn, body: &Body<A, C>) -> Result<(), Error> {
         let merkle_root = body.compute_merkle_root();
         for (vout, output) in body.coinbase.iter().enumerate() {
             let outpoint = OutPoint::Coinbase {
