@@ -23,3 +23,4 @@ anyhow = "1.0.71"
 thiserror = "1.0.40"
 project-root = "0.2.2"
 clap = { version = "4.3.0", features = ["derive"] }
+serde = "1.0.164"

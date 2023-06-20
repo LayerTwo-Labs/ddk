@@ -1,29 +1,51 @@
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 
-use plain_types::sdk_types::Address;
-use plain_types::sdk_types::GetValue;
-use plain_types::sdk_types::OutPoint;
+use plain_types::sdk_types::{Address, Body, GetAddress, GetValue, OutPoint, Verify};
 pub use sdk_api;
 use sdk_api::node::node_server::Node;
 use sdk_api::node::*;
 use sdk_api::tonic;
+
+use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
-type PlainNode = plain_node::Node<plain_types::sdk_authorization_ed25519_dalek::Authorization, ()>;
-
-pub struct PlainApi {
-    node: PlainNode,
+pub struct PlainApi<A, C> {
+    node: plain_node::Node<A, C>,
 }
 
-impl PlainApi {
-    pub fn new(node: PlainNode) -> Self {
+impl<A, C> PlainApi<A, C> {
+    pub fn new(node: plain_node::Node<A, C>) -> Self {
         Self { node }
     }
 }
 
 #[tonic::async_trait]
-impl Node for PlainApi {
+impl<
+        A: Verify<C>
+            + GetAddress
+            + Clone
+            + Debug
+            + Eq
+            + Serialize
+            + for<'de> Deserialize<'de>
+            + Send
+            + Sync
+            + 'static,
+        C: GetValue
+            + Clone
+            + Debug
+            + Eq
+            + Serialize
+            + for<'de> Deserialize<'de>
+            + Send
+            + Sync
+            + 'static,
+    > Node for PlainApi<A, C>
+where
+    plain_state::Error: From<<A as Verify<C>>::Error>,
+{
     async fn get_chain_height(
         &self,
         request: Request<GetChainHeightRequest>,
@@ -88,7 +110,7 @@ impl Node for PlainApi {
         let request = request.into_inner();
         let header: plain_types::Header =
             bincode::deserialize(&request.header).map_err(Error::from)?;
-        let body: plain_types::Body = bincode::deserialize(&request.body).map_err(Error::from)?;
+        let body: Body<A, C> = bincode::deserialize(&request.body).map_err(Error::from)?;
         self.node
             .submit_block(&header, &body)
             .await
