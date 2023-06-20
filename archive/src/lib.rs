@@ -1,19 +1,24 @@
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::bitcoin::hashes::Hash;
-use plain_types::sdk_types::BlockHash;
+use plain_types::sdk_types::{BlockHash, Body, GetValue};
 use plain_types::*;
 use sdk_types::hash;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
-pub struct Archive {
+pub struct Archive<A, C> {
     // Block height to header.
     headers: Database<OwnedType<u32>, SerdeBincode<Header>>,
-    bodies: Database<OwnedType<u32>, SerdeBincode<Body>>,
+    bodies: Database<OwnedType<u32>, SerdeBincode<Body<A, C>>>,
     hash_to_height: Database<OwnedType<[u8; 32]>, OwnedType<u32>>,
 }
 
-impl Archive {
+impl<
+        A: Serialize + for<'de> Deserialize<'de> + 'static,
+        C: Clone + Serialize + for<'de> Deserialize<'de> + GetValue + 'static,
+    > Archive<A, C>
+{
     pub const NUM_DBS: u32 = 3;
 
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
@@ -32,7 +37,7 @@ impl Archive {
         Ok(header)
     }
 
-    pub fn get_body(&self, txn: &RoTxn, height: u32) -> Result<Option<Body>, Error> {
+    pub fn get_body(&self, txn: &RoTxn, height: u32) -> Result<Option<Body<A, C>>, Error> {
         let header = self.bodies.get(txn, &height)?;
         Ok(header)
     }
@@ -53,7 +58,12 @@ impl Archive {
         Ok(height)
     }
 
-    pub fn put_body(&self, txn: &mut RwTxn, header: &Header, body: &Body) -> Result<(), Error> {
+    pub fn put_body(
+        &self,
+        txn: &mut RwTxn,
+        header: &Header,
+        body: &Body<A, C>,
+    ) -> Result<(), Error> {
         if header.merkle_root != body.compute_merkle_root() {
             return Err(Error::InvalidMerkleRoot);
         }

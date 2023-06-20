@@ -1,10 +1,14 @@
 use plain_net::{PeerState, Request, Response};
 use plain_types::{
-    sdk_types::{Address, GetValue, OutPoint},
+    sdk_types::{
+        Address, AuthorizedTransaction, Body, GetAddress, GetValue, OutPoint, Output, Verify,
+    },
     *,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     net::SocketAddr,
     path::Path,
     sync::Arc,
@@ -12,16 +16,38 @@ use std::{
 use tokio::sync::RwLock;
 
 #[derive(Clone)]
-pub struct Node {
+pub struct Node<A, C> {
     pub net: plain_net::Net,
-    pub state: plain_state::State<sdk_authorization_ed25519_dalek::Authorization, ()>,
-    pub archive: plain_archive::Archive,
-    pub mempool: plain_mempool::MemPool,
-    pub drivechain: plain_drivechain::Drivechain<()>,
+    pub state: plain_state::State<A, C>,
+    pub archive: plain_archive::Archive<A, C>,
+    pub mempool: plain_mempool::MemPool<A, C>,
+    pub drivechain: plain_drivechain::Drivechain<C>,
     pub env: heed::Env,
 }
 
-impl Node {
+impl<
+        A: Verify<C>
+            + GetAddress
+            + Clone
+            + Debug
+            + Sync
+            + Send
+            + Serialize
+            + for<'de> Deserialize<'de>
+            + 'static,
+        C: Clone
+            + Debug
+            + Eq
+            + Serialize
+            + for<'de> Deserialize<'de>
+            + Sync
+            + Send
+            + GetValue
+            + 'static,
+    > Node<A, C>
+where
+    plain_state::Error: From<<A as Verify<C>>::Error>,
+{
     pub fn new(
         datadir: &Path,
         bind_addr: SocketAddr,
@@ -34,9 +60,9 @@ impl Node {
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(
-                plain_state::State::<sdk_authorization_ed25519_dalek::Authorization, ()>::NUM_DBS
-                    + plain_archive::Archive::NUM_DBS
-                    + plain_mempool::MemPool::NUM_DBS,
+                plain_state::State::<A, C>::NUM_DBS
+                    + plain_archive::Archive::<A, C>::NUM_DBS
+                    + plain_mempool::MemPool::<A, C>::NUM_DBS,
             )
             .open(env_path)?;
         let state = plain_state::State::new(&env)?;
@@ -57,7 +83,7 @@ impl Node {
 
     pub async fn submit_transaction(
         &self,
-        transaction: &AuthorizedTransaction,
+        transaction: &AuthorizedTransaction<A, C>,
     ) -> Result<(), Error> {
         {
             let mut txn = self.env.write_txn()?;
@@ -88,7 +114,7 @@ impl Node {
     pub fn get_utxos_by_addresses(
         &self,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output>, Error> {
+    ) -> Result<HashMap<OutPoint, Output<C>>, Error> {
         let txn = self.env.read_txn()?;
         let utxos = self.state.get_utxos_by_addresses(&txn, addresses)?;
         Ok(utxos)
@@ -97,7 +123,7 @@ impl Node {
     pub fn get_transactions(
         &self,
         number: usize,
-    ) -> Result<(Vec<AuthorizedTransaction>, u64), Error> {
+    ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error> {
         let mut txn = self.env.write_txn().map_err(Error::from)?;
         let transactions = self.mempool.take(&txn, number).map_err(Error::from)?;
         let mut fee: u64 = 0;
@@ -129,7 +155,7 @@ impl Node {
         Ok((returned_transactions, fee))
     }
 
-    pub async fn submit_block(&self, header: &Header, body: &Body) -> Result<(), Error> {
+    pub async fn submit_block(&self, header: &Header, body: &Body<A, C>) -> Result<(), Error> {
         let last_deposit_block_hash = {
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
@@ -225,7 +251,7 @@ impl Node {
             .read_to_end(plain_net::READ_LIMIT)
             .await
             .map_err(plain_net::Error::from)?;
-        let message: Request = bincode::deserialize(&data)?;
+        let message: Request<A, C> = bincode::deserialize(&data)?;
         match message {
             Request::GetBlock { height } => {
                 let (header, body) = {
@@ -252,7 +278,7 @@ impl Node {
                 };
                 match valid {
                     Err(err) => {
-                        let response = Response::TransactionRejected;
+                        let response = Response::<A, C>::TransactionRejected;
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await
@@ -271,12 +297,12 @@ impl Node {
                                 continue;
                             }
                             peer0
-                                .request(&Request::PushTransaction {
+                                .request(&Request::<A, C>::PushTransaction {
                                     transaction: transaction.clone(),
                                 })
                                 .await?;
                         }
-                        let response = Response::TransactionAccepted;
+                        let response = Response::<A, C>::TransactionAccepted;
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await

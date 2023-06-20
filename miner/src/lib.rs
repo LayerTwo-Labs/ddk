@@ -4,13 +4,13 @@ use plain_types::*;
 use sdk_types::bitcoin;
 use std::str::FromStr as _;
 
-pub struct Miner {
-    pub drivechain: Drivechain<()>,
+pub struct Miner<C> {
+    pub drivechain: Drivechain<C>,
     block: Option<(Header, Body)>,
     sidechain_number: u32,
 }
 
-impl Miner {
+impl<C> Miner<C> {
     pub fn new(sidechain_number: u32, host: &str, port: u32) -> Result<Self, Error> {
         let drivechain = Drivechain::new(sidechain_number, host, port)?;
         Ok(Self {

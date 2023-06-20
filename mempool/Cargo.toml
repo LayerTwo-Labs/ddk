@@ -9,3 +9,4 @@ edition = "2021"
 thiserror = "1.0.40"
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 plain_types = { path = "../types" }
+serde = "1.0.164"

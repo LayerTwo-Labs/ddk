@@ -10,12 +10,14 @@ use sdk_api::node::*;
 use sdk_api::tonic;
 use tonic::{Request, Response, Status};
 
+type PlainNode = plain_node::Node<plain_types::sdk_authorization_ed25519_dalek::Authorization, ()>;
+
 pub struct PlainApi {
-    node: plain_node::Node,
+    node: PlainNode,
 }
 
 impl PlainApi {
-    pub fn new(node: plain_node::Node) -> Self {
+    pub fn new(node: PlainNode) -> Self {
         Self { node }
     }
 }

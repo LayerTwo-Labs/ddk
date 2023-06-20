@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
         .datadir
         .unwrap_or(project_root::get_project_root()?.join("target/plain"));
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
-    let mut miner = Miner::new(0, "localhost", 18443)?;
+    let mut miner = Miner::<()>::new(0, "localhost", 18443)?;
     let wallet_path = datadir.join("wallet.mdb");
     let wallet = plain_wallet::Wallet::new(&wallet_path)?;
     match args.command {

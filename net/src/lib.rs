@@ -1,5 +1,6 @@
 use anyhow::Result;
-use plain_types::{AuthorizedTransaction, Body, Header};
+use plain_types::sdk_types::{AuthorizedTransaction, Body};
+use plain_types::Header;
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -43,26 +44,36 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn request(&self, message: &Request) -> Result<Response, Error> {
+    pub async fn request<
+        A: Serialize + for<'de> Deserialize<'de>,
+        C: Serialize + for<'de> Deserialize<'de>,
+    >(
+        &self,
+        message: &Request<A, C>,
+    ) -> Result<Response<A, C>, Error> {
         let (mut send, mut recv) = self.connection.open_bi().await?;
         let message = bincode::serialize(message)?;
         send.write_all(&message).await?;
         send.finish().await?;
         let response = recv.read_to_end(READ_LIMIT).await?;
-        let response: Response = bincode::deserialize(&response)?;
+        let response: Response<A, C> = bincode::deserialize(&response)?;
         Ok(response)
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum Request {
-    GetBlock { height: u32 },
-    PushTransaction { transaction: AuthorizedTransaction },
+pub enum Request<A, C> {
+    GetBlock {
+        height: u32,
+    },
+    PushTransaction {
+        transaction: AuthorizedTransaction<A, C>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum Response {
-    Block { header: Header, body: Body },
+pub enum Response<A, C> {
+    Block { header: Header, body: Body<A, C> },
     NoBlock,
     TransactionAccepted,
     TransactionRejected,
