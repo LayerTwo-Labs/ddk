@@ -71,27 +71,6 @@ where
         Ok(utxos)
     }
 
-    pub fn validate_transaction(
-        &self,
-        txn: &RoTxn,
-        transaction: &AuthorizedTransaction<A, C>,
-    ) -> Result<u64, Error> {
-        let filled_transaction = self.fill_transaction(txn, &transaction.transaction)?;
-        for (authorization, spent_utxo) in transaction
-            .authorizations
-            .iter()
-            .zip(filled_transaction.spent_utxos.iter())
-        {
-            if authorization.get_address() != spent_utxo.address {
-                return Err(Error::WrongPubKeyForAddress);
-            }
-        }
-        A::verify_transaction(transaction)?;
-        // sdk_authorization_ed25519_dalek::verify_authorized_transaction(transaction)?;
-        let fee = self.validate_filled_transaction(&filled_transaction)?;
-        Ok(fee)
-    }
-
     pub fn fill_transaction(
         &self,
         txn: &RoTxn,
@@ -256,7 +235,7 @@ where
         Ok(self.last_withdrawal_bundle.get(txn, &0)?)
     }
 
-    fn validate_filled_transaction(
+    pub fn validate_filled_transaction(
         &self,
         transaction: &FilledTransaction<C>,
     ) -> Result<u64, Error> {

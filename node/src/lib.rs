@@ -1,7 +1,9 @@
+use heed::{RoTxn, RwTxn};
 use plain_net::{PeerState, Request, Response};
 use plain_types::{
     sdk_types::{
-        Address, AuthorizedTransaction, Body, GetAddress, GetValue, OutPoint, Output, Verify,
+        Address, AuthorizedTransaction, Body, FilledTransaction, GetAddress, GetValue, OutPoint,
+        Output, Verify,
     },
     *,
 };
@@ -16,9 +18,10 @@ use std::{
 use tokio::sync::RwLock;
 
 #[derive(Clone)]
-pub struct Node<A, C> {
+pub struct Node<A, C, S> {
     pub net: plain_net::Net,
     pub state: plain_state::State<A, C>,
+    pub custom_state: S,
     pub archive: plain_archive::Archive<A, C>,
     pub mempool: plain_mempool::MemPool<A, C>,
     pub drivechain: plain_drivechain::Drivechain<C>,
@@ -44,9 +47,11 @@ impl<
             + Send
             + GetValue
             + 'static,
-    > Node<A, C>
+        S: Clone + State<A, C> + Send + Sync + 'static,
+    > Node<A, C, S>
 where
     plain_state::Error: From<<A as Verify<C>>::Error>,
+    Error: From<<S as State<A, C>>::Error>,
 {
     pub fn new(
         datadir: &Path,
@@ -61,6 +66,7 @@ where
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(
                 plain_state::State::<A, C>::NUM_DBS
+                    + S::NUM_DBS
                     + plain_archive::Archive::<A, C>::NUM_DBS
                     + plain_mempool::MemPool::<A, C>::NUM_DBS,
             )
@@ -71,14 +77,40 @@ where
         const THIS_SIDECHAIN: u32 = 0;
         let drivechain = plain_drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
         let net = plain_net::Net::new(bind_addr)?;
+        let custom_state = State::new(&env)?;
         Ok(Self {
             net,
             state,
+            custom_state,
             archive,
             mempool,
             drivechain,
             env,
         })
+    }
+
+    pub fn validate_transaction(
+        &self,
+        txn: &RoTxn,
+        transaction: &AuthorizedTransaction<A, C>,
+    ) -> Result<u64, Error> {
+        let filled_transaction = self.state.fill_transaction(txn, &transaction.transaction)?;
+        for (authorization, spent_utxo) in transaction
+            .authorizations
+            .iter()
+            .zip(filled_transaction.spent_utxos.iter())
+        {
+            if authorization.get_address() != spent_utxo.address {
+                return Err(plain_state::Error::WrongPubKeyForAddress.into());
+            }
+        }
+        A::verify_transaction(transaction).map_err(plain_state::Error::from)?;
+        self.custom_state
+            .validate_filled_transaction(txn, &self.state, &filled_transaction)?;
+        let fee = self
+            .state
+            .validate_filled_transaction(&filled_transaction)?;
+        Ok(fee)
     }
 
     pub async fn submit_transaction(
@@ -87,9 +119,9 @@ where
     ) -> Result<(), Error> {
         {
             let mut txn = self.env.write_txn()?;
-            self.state.validate_transaction(&txn, &transaction)?;
+            self.validate_transaction(&txn, &transaction)?;
             self.mempool.put(&mut txn, &transaction)?;
-            txn.commit().map_err(Error::from)?;
+            txn.commit()?;
         }
         for peer in self.net.peers.read().await.values() {
             peer.request(&Request::PushTransaction {
@@ -124,20 +156,19 @@ where
         &self,
         number: usize,
     ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error> {
-        let mut txn = self.env.write_txn().map_err(Error::from)?;
-        let transactions = self.mempool.take(&txn, number).map_err(Error::from)?;
+        let mut txn = self.env.write_txn()?;
+        let transactions = self.mempool.take(&txn, number)?;
         let mut fee: u64 = 0;
         let mut returned_transactions = vec![];
         for transaction in &transactions {
-            if self.state.validate_transaction(&txn, transaction).is_err() {
+            if self.validate_transaction(&txn, transaction).is_err() {
                 self.mempool
                     .delete(&mut txn, &transaction.transaction.txid())?;
                 continue;
             }
             let filled_transaction = self
                 .state
-                .fill_transaction(&txn, &transaction.transaction)
-                .map_err(Error::from)?;
+                .fill_transaction(&txn, &transaction.transaction)?;
             let value_in: u64 = filled_transaction
                 .spent_utxos
                 .iter()
@@ -168,7 +199,10 @@ where
                 .await?;
             let mut txn = self.env.write_txn()?;
             self.state.validate_body(&txn, &body)?;
+            self.custom_state.validate_body(&txn, &self.state, &body)?;
             self.state.connect_body(&mut txn, &body)?;
+            self.custom_state
+                .connect_body(&mut txn, &self.state, &body)?;
             let height = self.archive.get_height(&txn)?;
             self.state
                 .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
@@ -180,7 +214,7 @@ where
             }
             dbg!(&two_way_peg_data);
             dbg!(self.state.get_utxos(&txn)?);
-            txn.commit().map_err(Error::from)?;
+            txn.commit()?;
         }
         if let Some(bundle) = bundle {
             let _ = self
@@ -274,7 +308,7 @@ where
             Request::PushTransaction { transaction } => {
                 let valid = {
                     let txn = self.env.read_txn()?;
-                    self.state.validate_transaction(&txn, &transaction)
+                    self.validate_transaction(&txn, &transaction)
                 };
                 match valid {
                     Err(err) => {
@@ -448,4 +482,60 @@ pub enum Error {
     State(#[from] plain_state::Error),
     #[error("bincode error")]
     Bincode(#[from] bincode::Error),
+}
+
+pub trait State<A, C>: Sized {
+    type Error;
+    const NUM_DBS: u32;
+    fn new(env: &heed::Env) -> Result<Self, Self::Error>;
+    fn validate_filled_transaction(
+        &self,
+        txn: &RoTxn,
+        state: &plain_state::State<A, C>,
+        transaction: &FilledTransaction<C>,
+    ) -> Result<(), Self::Error>;
+    fn validate_body(
+        &self,
+        txn: &RoTxn,
+        state: &plain_state::State<A, C>,
+        body: &Body<A, C>,
+    ) -> Result<(), Self::Error>;
+    fn connect_body(
+        &self,
+        txn: &mut RwTxn,
+        state: &plain_state::State<A, C>,
+        body: &Body<A, C>,
+    ) -> Result<(), Self::Error>;
+}
+
+impl<A, C> State<A, C> for () {
+    type Error = Error;
+    const NUM_DBS: u32 = 0;
+    fn new(_env: &heed::Env) -> Result<Self, Self::Error> {
+        Ok(())
+    }
+    fn validate_filled_transaction(
+        &self,
+        txn: &RoTxn,
+        state: &plain_state::State<A, C>,
+        transaction: &FilledTransaction<C>,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn validate_body(
+        &self,
+        txn: &RoTxn,
+        state: &plain_state::State<A, C>,
+        body: &Body<A, C>,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn connect_body(
+        &self,
+        txn: &mut RwTxn,
+        state: &plain_state::State<A, C>,
+        body: &Body<A, C>,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }

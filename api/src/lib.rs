@@ -11,12 +11,12 @@ use sdk_api::tonic;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
-pub struct PlainApi<A, C> {
-    node: plain_node::Node<A, C>,
+pub struct PlainApi<A, C, S> {
+    node: plain_node::Node<A, C, S>,
 }
 
-impl<A, C> PlainApi<A, C> {
-    pub fn new(node: plain_node::Node<A, C>) -> Self {
+impl<A, C, S> PlainApi<A, C, S> {
+    pub fn new(node: plain_node::Node<A, C, S>) -> Self {
         Self { node }
     }
 }
@@ -42,9 +42,11 @@ impl<
             + Send
             + Sync
             + 'static,
-    > Node for PlainApi<A, C>
+        S: Clone + plain_node::State<A, C> + Send + Sync + 'static,
+    > Node for PlainApi<A, C, S>
 where
     plain_state::Error: From<<A as Verify<C>>::Error>,
+    plain_node::Error: From<<S as plain_node::State<A, C>>::Error>,
 {
     async fn get_chain_height(
         &self,
@@ -147,7 +149,7 @@ where
         let AddPeerRequest { host, port } = request.into_inner();
         let addr: SocketAddr = format!("{host}:{port}")
             .parse()
-            .map_err(plain_node::Error::from)
+            .map_err(plain_net::Error::from)
             .map_err(Error::from)?;
         self.node.connect(addr).await.map_err(Error::from)?;
         Ok(Response::new(AddPeerResponse {}))
@@ -195,6 +197,8 @@ pub enum Error {
     State(#[from] plain_state::Error),
     #[error("archive error")]
     Archive(#[from] plain_archive::Error),
+    #[error("net error")]
+    Net(#[from] plain_net::Error),
 }
 
 impl From<Error> for Status {

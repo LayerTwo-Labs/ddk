@@ -18,10 +18,11 @@ async fn main() -> Result<()> {
         .unwrap_or(project_root::get_project_root()?.join("target/plain"));
     let mut node = plain_node::Node::new(&datadir, net_addr, "localhost", 18443)?;
     node.run()?;
-    let api =
-        plain_api::PlainApi::<plain_types::sdk_authorization_ed25519_dalek::Authorization, ()>::new(
-            node.clone(),
-        );
+    let api = plain_api::PlainApi::<
+        plain_types::sdk_authorization_ed25519_dalek::Authorization,
+        (),
+        (),
+    >::new(node.clone());
     println!("RPC server is running on {rpc_addr}");
 
     Server::builder()
