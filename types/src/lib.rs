@@ -1,17 +1,24 @@
-pub use sdk_authorization_ed25519_dalek;
-use sdk_authorization_ed25519_dalek::*;
-pub use sdk_types;
-pub use sdk_types::bitcoin;
-use sdk_types::{BlockHash, MerkleRoot, OutPoint};
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::HashMap};
 
+mod address;
+mod hashes;
+mod types;
+
+pub use types::*;
+pub use bitcoin;
+pub use bs58;
+pub use serde;
+
+
+/*
 // Replace () with a type (usually an enum) for output data specific for your sidechain.
-pub type Output = sdk_types::Output<()>;
-pub type Transaction = sdk_types::Transaction<()>;
-pub type FilledTransaction = sdk_types::FilledTransaction<()>;
-pub type AuthorizedTransaction = sdk_types::AuthorizedTransaction<Authorization, ()>;
-pub type Body = sdk_types::Body<Authorization, ()>;
+pub type Output = types::Output<()>;
+pub type Transaction = types::Transaction<()>;
+pub type FilledTransaction = types::FilledTransaction<()>;
+pub type AuthorizedTransaction = types::AuthorizedTransaction<Authorization, ()>;
+pub type Body = types::Body<Authorization, ()>;
+*/
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
@@ -22,7 +29,7 @@ pub struct Header {
 
 impl Header {
     pub fn hash(&self) -> BlockHash {
-        sdk_types::hash(self).into()
+        types::hash(self).into()
     }
 }
 
@@ -34,31 +41,33 @@ pub enum WithdrawalBundleStatus {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WithdrawalBundle<C> {
-    pub spent_utxos: HashMap<sdk_types::OutPoint, sdk_types::Output<C>>,
+    pub spent_utxos: HashMap<types::OutPoint, types::Output<C>>,
     pub transaction: bitcoin::Transaction,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TwoWayPegData<C> {
-    pub deposits: HashMap<sdk_types::OutPoint, sdk_types::Output<C>>,
+    pub deposits: HashMap<types::OutPoint, types::Output<C>>,
     pub deposit_block_hash: Option<bitcoin::BlockHash>,
     pub bundle_statuses: HashMap<bitcoin::Txid, WithdrawalBundleStatus>,
 }
 
+/*
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DisconnectData {
-    pub spent_utxos: HashMap<sdk_types::OutPoint, Output>,
-    pub deposits: Vec<sdk_types::OutPoint>,
+    pub spent_utxos: HashMap<types::OutPoint, Output>,
+    pub deposits: Vec<types::OutPoint>,
     pub pending_bundles: Vec<bitcoin::Txid>,
-    pub spent_bundles: HashMap<bitcoin::Txid, Vec<sdk_types::OutPoint>>,
-    pub spent_withdrawals: HashMap<sdk_types::OutPoint, Output>,
+    pub spent_bundles: HashMap<bitcoin::Txid, Vec<types::OutPoint>>,
+    pub spent_withdrawals: HashMap<types::OutPoint, Output>,
     pub failed_withdrawals: Vec<bitcoin::Txid>,
 }
+*/
 
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct AggregatedWithdrawal<C> {
-    pub spent_utxos: HashMap<OutPoint, sdk_types::Output<C>>,
-    pub main_address: bitcoin::Address,
+    pub spent_utxos: HashMap<OutPoint, types::Output<C>>,
+    pub main_address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     pub value: u64,
     pub main_fee: u64,
 }

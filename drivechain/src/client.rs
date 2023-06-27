@@ -1,6 +1,6 @@
-use bitcoin::util::amount::serde::SerdeAmount;
+use bitcoin::amount::serde::SerdeAmount;
 use jsonrpsee::proc_macros::rpc;
-use plain_types::sdk_types::bitcoin;
+use plain_types::bitcoin;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -42,7 +42,7 @@ pub struct Block {
     pub height: usize,
     pub version: i32,
     pub version_hex: String,
-    pub merkleroot: bitcoin::TxMerkleNode,
+    pub merkleroot: bitcoin::hash_types::TxMerkleNode,
     pub tx: Vec<bitcoin::Txid>,
     pub time: u32,
     pub mediantime: u32,

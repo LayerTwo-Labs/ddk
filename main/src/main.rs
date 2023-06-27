@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
     let mut node = plain_node::Node::new(&datadir, net_addr, "localhost", 18443)?;
     node.run()?;
     let api = plain_api::PlainApi::<
-        plain_types::sdk_authorization_ed25519_dalek::Authorization,
+        sdk_authorization_ed25519_dalek::Authorization,
         (),
         (),
     >::new(node.clone());

@@ -1,10 +1,9 @@
 mod client;
 use base64::Engine as _;
-use bitcoin::util::psbt::serialize::{Deserialize, Serialize};
 pub use client::MainClient;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use plain_types::*;
-use sdk_types::{bs58, Address, Content, OutPoint, Output};
+use plain_types::bitcoin::consensus::{Decodable, Encodable};
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Clone)]
@@ -52,7 +51,8 @@ impl<C> Drivechain<C> {
         &self,
         transaction: bitcoin::Transaction,
     ) -> Result<(), Error> {
-        let rawtx = transaction.serialize();
+        let mut rawtx = vec![];
+        transaction.consensus_encode(&mut rawtx)?;
         let rawtx = hex::encode(&rawtx);
         self.client
             .receivewithdrawalbundle(self.sidechain_number, &rawtx)
@@ -75,7 +75,8 @@ impl<C> Drivechain<C> {
         dbg!(last_total);
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
-            let transaction = bitcoin::Transaction::deserialize(transaction.as_slice())?;
+            let transaction =
+                bitcoin::Transaction::consensus_decode(&mut std::io::Cursor::new(transaction))?;
             if let Some(start) = start {
                 if deposit.hashblock == start {
                     last_total = transaction.output[deposit.nburnindex].value;
@@ -156,4 +157,6 @@ pub enum Error {
     Hex(#[from] hex::FromHexError),
     #[error("no next block for prev_main_hash = {prev_main_hash}")]
     NoNextBlock { prev_main_hash: bitcoin::BlockHash },
+    #[error("io error")]
+    Io(#[from] std::io::Error),
 }

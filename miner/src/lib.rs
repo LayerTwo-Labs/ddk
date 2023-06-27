@@ -1,16 +1,16 @@
 use bitcoin::hashes::Hash as _;
+use jsonrpsee::core::Serialize;
 use plain_drivechain::{Drivechain, MainClient as _};
 use plain_types::*;
-use sdk_types::bitcoin;
 use std::str::FromStr as _;
 
-pub struct Miner<C> {
+pub struct Miner<A, C> {
     pub drivechain: Drivechain<C>,
-    block: Option<(Header, Body)>,
+    block: Option<(Header, Body<A, C>)>,
     sidechain_number: u32,
 }
 
-impl<C> Miner<C> {
+impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
     pub fn new(sidechain_number: u32, host: &str, port: u32) -> Result<Self, Error> {
         let drivechain = Drivechain::new(sidechain_number, host, port)?;
         Ok(Self {
@@ -25,11 +25,11 @@ impl<C> Miner<C> {
         amount: u64,
         height: u32,
         header: Header,
-        body: Body,
+        body: Body<A, C>,
     ) -> Result<(), Error> {
         let str_hash_prev = header.prev_main_hash.to_string();
         let critical_hash: [u8; 32] = header.hash().into();
-        let critical_hash = bitcoin::BlockHash::from_inner(critical_hash);
+        let critical_hash = bitcoin::BlockHash::from_byte_array(critical_hash);
         let value = self
             .drivechain
             .client
@@ -49,7 +49,7 @@ impl<C> Miner<C> {
         Ok(())
     }
 
-    pub async fn confirm_bmm(&mut self) -> Result<Option<(Header, Body)>, Error> {
+    pub async fn confirm_bmm(&mut self) -> Result<Option<(Header, Body<A, C>)>, Error> {
         if let Some((header, body)) = self.block.clone() {
             self.drivechain.verify_bmm(&header).await?;
             self.block = None;

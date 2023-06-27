@@ -2,17 +2,17 @@ use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use plain_miner::Miner;
-use plain_types::{
-    bitcoin::{self, Amount},
-    sdk_types::{self, GetValue},
-    sdk_types::{Address, BlockHash, OutPoint},
-    AuthorizedTransaction, Body, Header, Output,
-};
 use plain_api::{
     node::{node_client::NodeClient, *},
     tonic::Request,
 };
+use plain_miner::Miner;
+use plain_types::{
+    bitcoin::{self, Amount},
+    Address, BlockHash, Body, GetValue, Header, OutPoint,
+};
+
+use plain_wallet::{Authorization, AuthorizedTransaction, Output, Transaction};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
         .datadir
         .unwrap_or(project_root::get_project_root()?.join("target/plain"));
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
-    let mut miner = Miner::<()>::new(0, "localhost", 18443)?;
+    let mut miner = Miner::<Authorization, ()>::new(0, "localhost", 18443)?;
     let wallet_path = datadir.join("wallet.mdb");
     let wallet = plain_wallet::Wallet::new(&wallet_path)?;
     match args.command {
@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
                     0 => vec![],
                     _ => vec![Output {
                         address: wallet.get_new_address()?,
-                        content: sdk_types::Content::Value(fee),
+                        content: plain_types::Content::Value(fee),
                     }],
                 };
                 let body = Body::new(transactions, coinbase);
@@ -258,7 +258,7 @@ pub enum Wallet {
         fee: Amount,
     },
     Withdraw {
-        to: bitcoin::Address,
+        to: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
         #[arg(value_parser = btc_amount_parser)]
         value: Amount,
         #[arg(value_parser = btc_amount_parser)]
@@ -294,7 +294,7 @@ pub enum Bmm {
     },
 }
 
-fn btc_amount_parser(s: &str) -> Result<bitcoin::Amount, bitcoin::util::amount::ParseAmountError> {
+fn btc_amount_parser(s: &str) -> Result<bitcoin::Amount, bitcoin::amount::ParseAmountError> {
     bitcoin::Amount::from_str_in(s, bitcoin::Denomination::Bitcoin)
 }
 

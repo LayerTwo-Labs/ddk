@@ -1,6 +1,6 @@
 use node::node_server::Node;
 use node::*;
-use plain_types::sdk_types::{Address, Body, GetAddress, GetValue, OutPoint, Verify};
+use plain_types::{Address, Body, GetAddress, GetValue, OutPoint, Verify};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -46,7 +46,6 @@ impl<
         S: Clone + plain_node::State<A, C> + Send + Sync + 'static,
     > Node for PlainApi<A, C, S>
 where
-    plain_state::Error: From<<A as Verify<C>>::Error>,
     plain_node::Error: From<<S as plain_node::State<A, C>>::Error>,
 {
     async fn get_chain_height(

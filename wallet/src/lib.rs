@@ -1,11 +1,14 @@
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_authorization_ed25519_dalek::{get_address, Authorization};
-use plain_types::sdk_types::{Address, GetValue, OutPoint};
-use plain_types::*;
+pub use sdk_authorization_ed25519_dalek::{get_address, Authorization};
+use plain_types::{Address, GetValue, OutPoint, bitcoin};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+pub type Output = plain_types::Output<()>;
+pub type Transaction = plain_types::Transaction<()>;
+pub type AuthorizedTransaction = plain_types::AuthorizedTransaction<Authorization, ()>;
 
 pub struct Wallet {
     env: heed::Env,
@@ -50,7 +53,7 @@ impl Wallet {
 
     pub fn create_withdrawal(
         &self,
-        main_address: bitcoin::Address,
+        main_address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
         value: u64,
         main_fee: u64,
         fee: u64,
@@ -61,7 +64,7 @@ impl Wallet {
         let outputs = vec![
             Output {
                 address: self.get_new_address()?,
-                content: sdk_types::Content::Withdrawal {
+                content: plain_types::Content::Withdrawal {
                     value,
                     main_fee,
                     main_address,
@@ -69,7 +72,7 @@ impl Wallet {
             },
             Output {
                 address: self.get_new_address()?,
-                content: sdk_types::Content::Value(change),
+                content: plain_types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -87,11 +90,11 @@ impl Wallet {
         let outputs = vec![
             Output {
                 address,
-                content: sdk_types::Content::Value(value),
+                content: plain_types::Content::Value(value),
             },
             Output {
                 address: self.get_new_address()?,
-                content: sdk_types::Content::Value(change),
+                content: plain_types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -233,7 +236,7 @@ pub enum Error {
     #[error("bip32 error")]
     Bip32(#[from] ed25519_dalek_bip32::Error),
     #[error("address {address} does not exist")]
-    AddressDoesNotExist { address: sdk_types::Address },
+    AddressDoesNotExist { address: plain_types::Address },
     #[error("utxo doesn't exist")]
     NoUtxo,
     #[error("wallet doesn't have a seed")]

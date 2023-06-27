@@ -1,6 +1,5 @@
 use anyhow::Result;
-use plain_types::sdk_types::{AuthorizedTransaction, Body};
-use plain_types::Header;
+use plain_types::{AuthorizedTransaction, Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -223,8 +222,6 @@ pub enum Error {
     Drivechain(#[from] plain_drivechain::Error),
     #[error("mempool error")]
     MemPool(#[from] plain_mempool::Error),
-    #[error("state error")]
-    State(#[from] plain_state::Error),
     #[error("bincode error")]
     Bincode(#[from] bincode::Error),
     #[error("already connected to peer at {0}")]

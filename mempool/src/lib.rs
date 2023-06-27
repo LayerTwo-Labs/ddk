@@ -1,6 +1,6 @@
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_types::{AuthorizedTransaction, Txid};
+use plain_types::{AuthorizedTransaction, Txid};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]

@@ -1,12 +1,6 @@
 use heed::{RoTxn, RwTxn};
 use plain_net::{PeerState, Request, Response};
-use plain_types::{
-    sdk_types::{
-        Address, AuthorizedTransaction, Body, FilledTransaction, GetAddress, GetValue, OutPoint,
-        Output, Verify,
-    },
-    *,
-};
+use plain_types::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -50,7 +44,6 @@ impl<
         S: Clone + State<A, C> + Send + Sync + 'static,
     > Node<A, C, S>
 where
-    plain_state::Error: From<<A as Verify<C>>::Error>,
     Error: From<<S as State<A, C>>::Error>,
 {
     pub fn new(
@@ -104,7 +97,9 @@ where
                 return Err(plain_state::Error::WrongPubKeyForAddress.into());
             }
         }
-        A::verify_transaction(transaction).map_err(plain_state::Error::from)?;
+        if A::verify_transaction(transaction).is_err() {
+            return Err(plain_state::Error::AuthorizationError.into());
+        }
         self.custom_state
             .validate_filled_transaction(txn, &self.state, &filled_transaction)?;
         let fee = self

@@ -2,11 +2,7 @@
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::sdk_types::{Address, Content, GetAddress, GetValue};
-use plain_types::{sdk_authorization_ed25519_dalek, sdk_types, TwoWayPegData};
-use plain_types::{sdk_types::OutPoint, *};
-use sdk_types::GetValue as _;
-use sdk_types::{AuthorizedTransaction, Body, FilledTransaction, Output, Transaction};
+use plain_types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -22,11 +18,9 @@ pub struct State<A, C> {
 }
 
 impl<
-        A: sdk_types::Verify<C> + GetAddress,
+        A: plain_types::Verify<C> + GetAddress,
         C: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
     > State<A, C>
-where
-    Error: From<<A as sdk_types::Verify<C>>::Error>,
 {
     pub const NUM_DBS: u32 = 5;
     pub const WITHDRAWAL_BUNDLE_FAILURE_GAP: u32 = 4;
@@ -97,17 +91,20 @@ where
     ) -> Result<Option<WithdrawalBundle<C>>, Error> {
         use bitcoin::blockdata::{opcodes, script};
         // Weight of a bundle with 0 outputs.
-        const BUNDLE_0_WEIGHT: usize = 504;
+        const BUNDLE_0_WEIGHT: u64 = 504;
         // Weight of a single output.
-        const OUTPUT_WEIGHT: usize = 128;
+        const OUTPUT_WEIGHT: u64 = 128;
         // Turns out to be 3121.
-        const MAX_BUNDLE_OUTPUTS: usize =
-            (bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize - BUNDLE_0_WEIGHT) / OUTPUT_WEIGHT;
+        const MAX_BUNDLE_OUTPUTS: usize = ((bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64
+            - BUNDLE_0_WEIGHT)
+            / OUTPUT_WEIGHT) as usize;
 
         // Aggregate all outputs by destination.
         // destination -> (value, mainchain fee, spent_utxos)
-        let mut address_to_aggregated_withdrawal =
-            HashMap::<bitcoin::Address, AggregatedWithdrawal<C>>::new();
+        let mut address_to_aggregated_withdrawal = HashMap::<
+            bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+            AggregatedWithdrawal<C>,
+        >::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
             if let Content::Withdrawal {
@@ -148,7 +145,7 @@ where
             }
             let bundle_output = bitcoin::TxOut {
                 value: aggregated.value,
-                script_pubkey: aggregated.main_address.script_pubkey(),
+                script_pubkey: aggregated.main_address.payload.script_pubkey(),
             };
             spent_utxos.extend(aggregated.spent_utxos.clone());
             bundle_outputs.push(bundle_output);
@@ -163,10 +160,9 @@ where
         };
         // Create return dest output.
         // The destination string for the change of a WT^
-        const SIDECHAIN_WTPRIME_RETURN_DEST: &[u8] = b"D";
         let script = script::Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)
-            .push_slice(SIDECHAIN_WTPRIME_RETURN_DEST)
+            .push_slice([68; 1])
             .into_script();
         let return_dest_txout = bitcoin::TxOut {
             value: 0,
@@ -175,7 +171,7 @@ where
         // Create mainchain fee output.
         let script = script::Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)
-            .push_slice(fee.to_le_bytes().as_ref())
+            .push_slice(fee.to_le_bytes())
             .into_script();
         let mainchain_fee_txout = bitcoin::TxOut {
             value: 0,
@@ -192,7 +188,7 @@ where
             }],
         ]
         .concat();
-        let commitment = sdk_types::hash(&inputs);
+        let commitment = plain_types::hash(&inputs);
         let script = script::Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)
             .push_slice(&commitment)
@@ -203,7 +199,7 @@ where
         };
         let transaction = bitcoin::Transaction {
             version: 2,
-            lock_time: bitcoin::PackedLockTime(0),
+            lock_time: bitcoin::blockdata::locktime::absolute::LockTime::ZERO,
             input: vec![txin],
             output: [
                 vec![
@@ -215,10 +211,10 @@ where
             ]
             .concat(),
         };
-        if transaction.weight() > bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize {
+        if transaction.weight().to_wu() > bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64 {
             Err(Error::BundleTooHeavy {
-                weight: transaction.weight(),
-                max_weight: bitcoin::policy::MAX_STANDARD_TX_WEIGHT as usize,
+                weight: transaction.weight().to_wu(),
+                max_weight: bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64,
             })?;
         }
         dbg!(&transaction);
@@ -285,8 +281,9 @@ where
                 return Err(Error::WrongPubKeyForAddress);
             }
         }
-        // sdk_authorization_ed25519_dalek::verify_authorizations(body)?;
-        A::verify_body(body)?;
+        if A::verify_body(body).is_err() {
+            return Err(Error::AuthorizationError);
+        }
         Ok(total_fees)
     }
 
@@ -381,10 +378,8 @@ where
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("authorization error")]
-    Authorization(#[from] sdk_authorization_ed25519_dalek::Error),
-    #[error("sdk error")]
-    Sdk(#[from] sdk_types::Error),
+    #[error("failed to verify authorization")]
+    AuthorizationError,
     #[error("heed error")]
     Heed(#[from] heed::Error),
     #[error("utxo {outpoint} doesn't exist")]
@@ -399,5 +394,5 @@ pub enum Error {
     #[error("wrong public key for address")]
     WrongPubKeyForAddress,
     #[error("bundle too heavy {weight} > {max_weight}")]
-    BundleTooHeavy { weight: usize, max_weight: usize },
+    BundleTooHeavy { weight: u64, max_weight: u64 },
 }

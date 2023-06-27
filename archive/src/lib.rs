@@ -1,9 +1,8 @@
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::bitcoin::hashes::Hash;
-use plain_types::sdk_types::{BlockHash, Body, GetValue};
+use plain_types::{BlockHash, Body, GetValue, hash};
 use plain_types::*;
-use sdk_types::hash;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
