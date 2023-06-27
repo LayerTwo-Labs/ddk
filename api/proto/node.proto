@@ -1,0 +1,59 @@
+syntax = "proto3";
+package node;
+
+service Node {
+  rpc ValidateTransaction(ValidateTransactionRequest)
+      returns (ValidateTransactionResponse);
+  rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
+
+  rpc SubmitTransaction(SubmitTransactionRequest)
+      returns (SubmitTransactionResponse);
+
+  rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse);
+  rpc SubmitBlock(SubmitBlockRequest) returns (SubmitBlockResponse);
+
+  rpc GetBestHash(GetBestHashRequest) returns (GetBestHashResponse);
+
+  rpc GetChainHeight(GetChainHeightRequest) returns (GetChainHeightResponse);
+
+  rpc GetUtxosByAddresses(GetUtxosByAddressesRequest)
+      returns (GetUtxosByAddressesResponse);
+
+  rpc GetSpentUtxos(GetSpentUtxosRequest) returns (GetSpentUtxosResponse);
+}
+
+message ValidateTransactionRequest { bytes transaction = 1; }
+message ValidateTransactionResponse {}
+
+message AddPeerRequest {
+  string host = 1;
+  uint32 port = 2;
+}
+message AddPeerResponse {}
+
+message GetTransactionsRequest {}
+message GetTransactionsResponse {
+  bytes transactions = 1;
+  uint64 fee = 2;
+}
+
+message SubmitTransactionRequest { bytes transaction = 1; }
+message SubmitTransactionResponse {}
+
+message SubmitBlockRequest {
+  bytes header = 1;
+  bytes body = 2;
+}
+message SubmitBlockResponse {}
+
+message GetBestHashRequest {}
+message GetBestHashResponse { bytes best_hash = 1; }
+
+message GetChainHeightRequest {}
+message GetChainHeightResponse { uint32 block_count = 1; }
+
+message GetUtxosByAddressesRequest { bytes addresses = 1; }
+message GetUtxosByAddressesResponse { bytes utxos = 1; }
+
+message GetSpentUtxosRequest { bytes outpoints = 1; }
+message GetSpentUtxosResponse { bytes spent_outpoints = 1; }

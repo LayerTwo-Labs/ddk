@@ -1,15 +1,16 @@
+use node::node_server::Node;
+use node::*;
+use plain_types::sdk_types::{Address, Body, GetAddress, GetValue, OutPoint, Verify};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::net::SocketAddr;
-
-use plain_types::sdk_types::{Address, Body, GetAddress, GetValue, OutPoint, Verify};
-pub use sdk_api;
-use sdk_api::node::node_server::Node;
-use sdk_api::node::*;
-use sdk_api::tonic;
-
-use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
+
+pub use tonic;
+pub mod node {
+    tonic::include_proto!("node");
+}
 
 pub struct PlainApi<A, C, S> {
     node: plain_node::Node<A, C, S>,
