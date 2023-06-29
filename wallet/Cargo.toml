@@ -13,3 +13,4 @@ thiserror = "1.0.40"
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 ed25519-dalek-bip32 = "0.2.0"
 bincode = "1.3.3"
+serde = "1.0.164"

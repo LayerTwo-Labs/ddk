@@ -1,5 +1,3 @@
-use std::{collections::HashMap, path::PathBuf};
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use plain_api::{
@@ -11,8 +9,11 @@ use plain_types::{
     bitcoin::{self, Amount},
     Address, BlockHash, Body, GetValue, Header, OutPoint,
 };
+use plain_wallet::Authorization;
+use std::{collections::HashMap, path::PathBuf};
 
-use plain_wallet::{Authorization, AuthorizedTransaction, Output, Transaction};
+type Output = plain_types::Output<()>;
+type AuthorizedTransaction = plain_types::AuthorizedTransaction<Authorization, ()>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,7 +26,7 @@ async fn main() -> Result<()> {
     let mut client = NodeClient::connect(format!("http://[::1]:{port}")).await?;
     let mut miner = Miner::<Authorization, ()>::new(0, "localhost", 18443)?;
     let wallet_path = datadir.join("wallet.mdb");
-    let wallet = plain_wallet::Wallet::new(&wallet_path)?;
+    let wallet = plain_wallet::Wallet::<()>::new(&wallet_path)?;
     match args.command {
         Command::Net(net) => match net {
             Net::Connect { host, port } => {
