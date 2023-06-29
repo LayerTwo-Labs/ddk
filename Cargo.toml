@@ -8,10 +8,8 @@ members = [
 "wallet",
 "miner",
 "net",
-"cli",
 "drivechain",
 "mempool",
 "node",
-"main",
 "authorization",
 ]

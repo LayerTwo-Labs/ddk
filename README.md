@@ -1,7 +1,5 @@
 # Crates in the workspace
-- `cli` -- executable CLI for interacting with the node.
 - `node` -- a node that integrates all of the components together.
-- `main` -- executable entry point.
 - `net` -- networking code.
 - `api` -- definition of gRPC api.
 - `state` -- validation rules and state transition rules.
@@ -18,5 +16,3 @@
 # Todo
 - [ ] Handle reorgs
 - [ ] Shorten address to 160 bits from  256 bits
-- [ ] Move sdk_types into this workspace
-- [ ] Move bin crates out of this workspace
