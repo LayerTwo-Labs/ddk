@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 plain_types = { path = "../types" }
 
-sdk_authorization_ed25519_dalek = { path = "../../sdk_authorization_ed25519_dalek" }
+sdk_authorization_ed25519_dalek = { git = "https://github.com/nchashch/sdk_authorization_ed25519_dalek" }
 
 thiserror = "1.0.40"
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }

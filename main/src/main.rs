@@ -1,8 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
 use plain_api::node::node_server::NodeServer;
+use sdk_authorization_ed25519_dalek::Authorization;
 use std::{net::SocketAddr, path::PathBuf};
 use tonic::transport::Server;
+
+// plain_node
+// plain_api
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,17 +20,13 @@ async fn main() -> Result<()> {
     let datadir = args
         .datadir
         .unwrap_or(project_root::get_project_root()?.join("target/plain"));
-    let mut node = plain_node::Node::new(&datadir, net_addr, "localhost", 18443)?;
+    let mut node =
+        plain_node::Node::<Authorization, (), ()>::new(&datadir, net_addr, "localhost", 18443)?;
     node.run()?;
-    let api = plain_api::PlainApi::<
-        sdk_authorization_ed25519_dalek::Authorization,
-        (),
-        (),
-    >::new(node.clone());
     println!("RPC server is running on {rpc_addr}");
 
     Server::builder()
-        .add_service(NodeServer::new(api))
+        .add_service(NodeServer::new(node))
         .serve(rpc_addr)
         .await?;
 

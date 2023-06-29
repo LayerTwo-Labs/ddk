@@ -11,6 +11,8 @@ use std::{
 };
 use tokio::sync::RwLock;
 
+pub mod api;
+
 #[derive(Clone)]
 pub struct Node<A, C, S> {
     pub net: plain_net::Net,
