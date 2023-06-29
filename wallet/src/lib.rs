@@ -1,7 +1,7 @@
 use ed25519_dalek_bip32::*;
 use heed::types::*;
-use heed::{Database, RoTxn, RwTxn};
-pub use sdk_authorization_ed25519_dalek::{get_address, Authorization};
+use heed::{Database, RoTxn};
+pub use plain_authorization::{get_address, Authorization};
 use plain_types::{Address, GetValue, OutPoint, bitcoin};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -186,7 +186,7 @@ impl Wallet {
                     address: spent_utxo.address,
                 })?;
             let keypair = self.get_keypair(&txn, index)?;
-            let signature = sdk_authorization_ed25519_dalek::sign(&keypair, &transaction)?;
+            let signature = plain_authorization::sign(&keypair, &transaction)?;
             authorizations.push(Authorization {
                 public_key: keypair.public,
                 signature,
@@ -244,7 +244,7 @@ pub enum Error {
     #[error("no index for address {address}")]
     NoIndex { address: Address },
     #[error("authorization error")]
-    Authorization(#[from] sdk_authorization_ed25519_dalek::Error),
+    Authorization(#[from] plain_authorization::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("not enough funds")]

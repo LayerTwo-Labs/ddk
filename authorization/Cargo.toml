@@ -1,5 +1,5 @@
 [package]
-name = "plain_wallet"
+name = "plain_authorization"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,9 +7,8 @@ edition = "2021"
 
 [dependencies]
 plain_types = { path = "../types" }
-plain_authorization = { path = "../authorization" }
-
-thiserror = "1.0.40"
-heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
-ed25519-dalek-bip32 = "0.2.0"
+ed25519-dalek = { version = "1.0.1", features = ["serde", "batch"] }
+rayon = "1.7.0"
+serde = "1.0.164"
 bincode = "1.3.3"
+thiserror = "1.0.40"

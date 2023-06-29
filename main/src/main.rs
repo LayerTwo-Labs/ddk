@@ -1,12 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 use plain_api::node::node_server::NodeServer;
-use sdk_authorization_ed25519_dalek::Authorization;
+use plain_authorization::Authorization;
 use std::{net::SocketAddr, path::PathBuf};
 use tonic::transport::Server;
-
-// plain_node
-// plain_api
 
 #[tokio::main]
 async fn main() -> Result<()> {

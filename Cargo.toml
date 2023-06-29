@@ -13,4 +13,5 @@ members = [
 "mempool",
 "node",
 "main",
+"authorization",
 ]
