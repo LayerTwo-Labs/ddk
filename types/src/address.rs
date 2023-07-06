@@ -1,7 +1,5 @@
-use crate::hashes::Hash;
-
 #[derive(Clone, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct Address(pub Hash);
+pub struct Address(pub [u8; 20]);
 
 impl Address {
     pub fn to_base58(self) -> String {
@@ -24,8 +22,8 @@ impl std::fmt::Debug for Address {
     }
 }
 
-impl From<Hash> for Address {
-    fn from(other: Hash) -> Self {
+impl From<[u8; 20]> for Address {
+    fn from(other: [u8; 20]) -> Self {
         Self(other)
     }
 }

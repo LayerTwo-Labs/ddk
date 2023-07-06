@@ -205,7 +205,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let (last_index, _) = self
             .index_to_address
             .last(&txn)?
-            .unwrap_or((0, [0; 32].into()));
+            .unwrap_or((0, [0; 20].into()));
         let index = last_index + 1;
         let keypair = self.get_keypair(&txn, index)?;
         let address = get_address(&keypair.public);

@@ -9,6 +9,7 @@ pub use types::*;
 pub use bitcoin;
 pub use bs58;
 pub use serde;
+pub use blake3;
 
 
 /*

@@ -1,6 +1,7 @@
 pub use ed25519_dalek::{Keypair, PublicKey, Signature, SignatureError, Signer, Verifier};
+use plain_types::blake3;
+use plain_types::{Address, AuthorizedTransaction, Body, GetAddress, Transaction, Verify};
 use rayon::prelude::*;
-use plain_types::{hash, Address, AuthorizedTransaction, Body, GetAddress, Transaction, Verify};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +36,11 @@ impl<C: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync> Verify<C> f
 }
 
 pub fn get_address(public_key: &PublicKey) -> Address {
-    Address::from(hash(&public_key.to_bytes()))
+    let mut hasher = blake3::Hasher::new();
+    let mut reader = hasher.update(&public_key.to_bytes()).finalize_xof();
+    let mut output: [u8; 20] = [0; 20];
+    reader.fill(&mut output);
+    Address(output)
 }
 
 struct Package<'a> {
@@ -144,7 +149,7 @@ pub fn authorize<C: Clone + Serialize>(
     let mut authorizations: Vec<Authorization> = Vec::with_capacity(addresses_keypairs.len());
     let message = bincode::serialize(&transaction)?;
     for (address, keypair) in addresses_keypairs {
-        let hash_public_key = Address::from(hash(&keypair.public.to_bytes()));
+        let hash_public_key = get_address(&keypair.public);
         if *address != hash_public_key {
             return Err(Error::WrongKeypairForAddress {
                 address: *address,
