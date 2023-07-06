@@ -35,7 +35,7 @@ impl std::str::FromStr for Address {
             .with_alphabet(bs58::Alphabet::BITCOIN)
             .with_check(None)
             .into_vec()?;
-        assert_eq!(address.len(), 32);
+        assert_eq!(address.len(), 20);
         Ok(Address(address.try_into().unwrap()))
     }
 }
