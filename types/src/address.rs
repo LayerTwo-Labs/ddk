@@ -29,13 +29,22 @@ impl From<[u8; 20]> for Address {
 }
 
 impl std::str::FromStr for Address {
-    type Err = bs58::decode::Error;
+    type Err = AddressParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let address = bs58::decode(s)
             .with_alphabet(bs58::Alphabet::BITCOIN)
             .with_check(None)
             .into_vec()?;
-        assert_eq!(address.len(), 20);
-        Ok(Address(address.try_into().unwrap()))
+        Ok(Address(address.try_into().map_err(
+            |address: Vec<u8>| AddressParseError::WrongLength(address.len()),
+        )?))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddressParseError {
+    #[error("bs58 error")]
+    Bs58(#[from] bs58::decode::Error),
+    #[error("wrong address length {0} != 20")]
+    WrongLength(usize),
 }

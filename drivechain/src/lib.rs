@@ -2,8 +2,8 @@ mod client;
 use base64::Engine as _;
 pub use client::MainClient;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
-use plain_types::*;
 use plain_types::bitcoin::consensus::{Decodable, Encodable};
+use plain_types::*;
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Clone)]
@@ -89,18 +89,24 @@ impl<C> Drivechain<C> {
                 continue;
             }
             let value = total - last_total;
-            let address: Address = deposit.strdest.parse()?;
-            let output = Output {
-                address,
-                content: Content::Value(value),
-            };
             let outpoint = OutPoint::Deposit(bitcoin::OutPoint {
                 txid: transaction.txid(),
                 vout: deposit.nburnindex as u32,
             });
-            outputs.insert(outpoint, output);
             last_total = total;
             last_block_hash = Some(deposit.hashblock);
+            let address: Address = match deposit.strdest.parse() {
+                Ok(address) => address,
+                Err(err) => {
+                    dbg!(err);
+                    continue;
+                }
+            };
+            let output = Output {
+                address,
+                content: Content::Value(value),
+            };
+            outputs.insert(outpoint, output);
         }
         Ok((outputs, last_block_hash))
     }
@@ -147,8 +153,8 @@ pub enum Error {
     Jsonrpsee(#[from] jsonrpsee::core::Error),
     #[error("header error")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
-    #[error("bs58 decode error")]
-    Bs58(#[from] bs58::decode::Error),
+    #[error("address parse error")]
+    AddressParse(#[from] plain_types::AddressParseError),
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("bitcoin hex error")]
