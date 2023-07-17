@@ -13,6 +13,8 @@ use tokio::sync::RwLock;
 
 pub mod api;
 
+pub const THIS_SIDECHAIN: u32 = 0;
+
 #[derive(Clone)]
 pub struct Node<A, C, S> {
     pub net: plain_net::Net,
@@ -69,7 +71,6 @@ where
         let state = plain_state::State::new(&env)?;
         let archive = plain_archive::Archive::new(&env)?;
         let mempool = plain_mempool::MemPool::new(&env)?;
-        const THIS_SIDECHAIN: u32 = 0;
         let drivechain = plain_drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
         let net = plain_net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
@@ -82,6 +83,16 @@ where
             drivechain,
             env,
         })
+    }
+
+    pub fn get_height(&self) -> Result<u32, Error> {
+        let txn = self.env.read_txn()?;
+        Ok(self.archive.get_height(&txn)?)
+    }
+
+    pub fn get_best_hash(&self) -> Result<plain_types::BlockHash, Error> {
+        let txn = self.env.read_txn()?;
+        Ok(self.archive.get_best_hash(&txn)?)
     }
 
     pub fn validate_transaction(
@@ -209,8 +220,6 @@ where
             for transaction in &body.transactions {
                 self.mempool.delete(&mut txn, &transaction.txid())?;
             }
-            dbg!(&two_way_peg_data);
-            dbg!(self.state.get_utxos(&txn)?);
             txn.commit()?;
         }
         if let Some(bundle) = bundle {

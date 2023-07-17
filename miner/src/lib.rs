@@ -1,9 +1,12 @@
 use bitcoin::hashes::Hash as _;
 use jsonrpsee::core::Serialize;
-use plain_drivechain::{Drivechain, MainClient as _};
+use plain_drivechain::Drivechain;
 use plain_types::*;
 use std::str::FromStr as _;
 
+pub use plain_drivechain::MainClient;
+
+#[derive(Clone)]
 pub struct Miner<A, C> {
     pub drivechain: Drivechain<C>,
     block: Option<(Header, Body<A, C>)>,
@@ -18,6 +21,15 @@ impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
             sidechain_number,
             block: None,
         })
+    }
+
+    pub async fn generate(&self) -> Result<(), Error> {
+        self.drivechain
+            .client
+            .generate(1)
+            .await
+            .map_err(plain_drivechain::Error::from)?;
+        Ok(())
     }
 
     pub async fn attempt_bmm(

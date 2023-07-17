@@ -120,6 +120,18 @@ pub trait Main {
         // Raw transaction hex.
         rawtx: &str,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "generate")]
+    async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+
+    #[method(name = "createsidechaindeposit")]
+    async fn createsidechaindeposit(
+        &self,
+        nsidechain: u32,
+        depositaddress: &str,
+        amount: AmountBtc,
+        fee: AmountBtc,
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 }
 
 // Arguments:

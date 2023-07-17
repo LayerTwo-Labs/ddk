@@ -1,16 +1,17 @@
+use heed::byteorder::{BigEndian, ByteOrder};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use plain_types::bitcoin::hashes::Hash;
-use plain_types::{BlockHash, Body, GetValue, hash};
 use plain_types::*;
+use plain_types::{hash, BlockHash, Body, GetValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct Archive<A, C> {
     // Block height to header.
-    headers: Database<OwnedType<u32>, SerdeBincode<Header>>,
-    bodies: Database<OwnedType<u32>, SerdeBincode<Body<A, C>>>,
-    hash_to_height: Database<OwnedType<[u8; 32]>, OwnedType<u32>>,
+    headers: Database<OwnedType<[u8; 4]>, SerdeBincode<Header>>,
+    bodies: Database<OwnedType<[u8; 4]>, SerdeBincode<Body<A, C>>>,
+    hash_to_height: Database<OwnedType<[u8; 32]>, OwnedType<[u8; 4]>>,
 }
 
 impl<
@@ -32,11 +33,13 @@ impl<
     }
 
     pub fn get_header(&self, txn: &RoTxn, height: u32) -> Result<Option<Header>, Error> {
+        let height = height.to_be_bytes();
         let header = self.headers.get(txn, &height)?;
         Ok(header)
     }
 
     pub fn get_body(&self, txn: &RoTxn, height: u32) -> Result<Option<Body<A, C>>, Error> {
+        let height = height.to_be_bytes();
         let header = self.bodies.get(txn, &height)?;
         Ok(header)
     }
@@ -51,7 +54,7 @@ impl<
 
     pub fn get_height(&self, txn: &RoTxn) -> Result<u32, Error> {
         let height = match self.headers.last(txn)? {
-            Some((height, _)) => height,
+            Some((height, _)) => BigEndian::read_u32(&height),
             None => 0,
         };
         Ok(height)
@@ -81,9 +84,10 @@ impl<
         if header.prev_side_hash != best_hash {
             return Err(Error::InvalidPrevSideHash);
         }
-        self.headers.put(txn, &(height + 1), header)?;
+        let new_height = (height + 1).to_be_bytes();
+        self.headers.put(txn, &new_height, header)?;
         self.hash_to_height
-            .put(txn, &header.hash().into(), &(height + 1))?;
+            .put(txn, &header.hash().into(), &new_height)?;
         Ok(())
     }
 }

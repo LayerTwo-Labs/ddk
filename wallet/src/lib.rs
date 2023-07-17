@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+#[derive(Clone)]
 pub struct Wallet<C> {
     env: heed::Env,
     // FIXME: Don't store the seed in plaintext.
