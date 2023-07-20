@@ -1,11 +1,12 @@
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::{AuthorizedTransaction, Txid};
+use plain_types::{AuthorizedTransaction, OutPoint, Txid};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct MemPool<A, C> {
     pub transactions: Database<OwnedType<[u8; 32]>, SerdeBincode<AuthorizedTransaction<A, C>>>,
+    pub spent_utxos: Database<SerdeBincode<OutPoint>, Unit>,
 }
 
 impl<
@@ -16,8 +17,12 @@ impl<
     pub const NUM_DBS: u32 = 1;
 
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
-        let transactions = env.create_database(Some("transactinos"))?;
-        Ok(Self { transactions })
+        let transactions = env.create_database(Some("transactions"))?;
+        let spent_utxos = env.create_database(Some("spent_utxos"))?;
+        Ok(Self {
+            transactions,
+            spent_utxos,
+        })
     }
 
     pub fn put(
@@ -29,6 +34,12 @@ impl<
             "adding transaction {} to mempool",
             transaction.transaction.txid()
         );
+        for input in &transaction.transaction.inputs {
+            if self.spent_utxos.get(txn, input)?.is_some() {
+                return Err(Error::UtxoDoubleSpent);
+            }
+            self.spent_utxos.put(txn, input, &())?;
+        }
         self.transactions
             .put(txn, &transaction.transaction.txid().into(), &transaction)?;
         Ok(())
@@ -57,4 +68,6 @@ impl<
 pub enum Error {
     #[error("heed error")]
     Heed(#[from] heed::Error),
+    #[error("can't add transaction, utxo double spent")]
+    UtxoDoubleSpent,
 }

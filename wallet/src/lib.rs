@@ -1,7 +1,9 @@
+use byteorder::{BigEndian, ByteOrder};
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn};
 pub use plain_authorization::{get_address, Authorization};
+use plain_types::bitcoin::bech32::ToBase32;
 use plain_types::{
     bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction,
 };
@@ -13,9 +15,9 @@ use std::path::Path;
 pub struct Wallet<C> {
     env: heed::Env,
     // FIXME: Don't store the seed in plaintext.
-    seed: Database<OwnedType<u32>, OwnedType<[u8; 64]>>,
-    pub address_to_index: Database<SerdeBincode<Address>, OwnedType<u32>>,
-    pub index_to_address: Database<OwnedType<u32>, SerdeBincode<Address>>,
+    seed: Database<OwnedType<u8>, OwnedType<[u8; 64]>>,
+    pub address_to_index: Database<SerdeBincode<Address>, OwnedType<[u8; 4]>>,
+    pub index_to_address: Database<OwnedType<[u8; 4]>, SerdeBincode<Address>>,
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
 }
 
@@ -49,6 +51,11 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         self.utxos.clear(&mut txn)?;
         txn.commit()?;
         Ok(())
+    }
+
+    pub fn has_seed(&self) -> Result<bool, Error> {
+        let txn = self.env.read_txn()?;
+        Ok(self.seed.get(&txn, &0)?.is_some())
     }
 
     pub fn create_withdrawal(
@@ -188,6 +195,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
                 .ok_or(Error::NoIndex {
                     address: spent_utxo.address,
                 })?;
+            let index = BigEndian::read_u32(&index);
             let keypair = self.get_keypair(&txn, index)?;
             let signature = plain_authorization::sign(&keypair, &transaction)?;
             authorizations.push(Authorization {
@@ -206,14 +214,26 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let (last_index, _) = self
             .index_to_address
             .last(&txn)?
-            .unwrap_or((0, [0; 20].into()));
+            .unwrap_or(([0; 4], [0; 20].into()));
+        let last_index = BigEndian::read_u32(&last_index);
         let index = last_index + 1;
         let keypair = self.get_keypair(&txn, index)?;
         let address = get_address(&keypair.public);
+        let index = index.to_be_bytes();
         self.index_to_address.put(&mut txn, &index, &address)?;
         self.address_to_index.put(&mut txn, &address, &index)?;
         txn.commit()?;
         Ok(address)
+    }
+
+    pub fn get_num_addresses(&self) -> Result<u32, Error> {
+        let txn = self.env.read_txn()?;
+        let (last_index, _) = self
+            .index_to_address
+            .last(&txn)?
+            .unwrap_or(([0; 4], [0; 20].into()));
+        let last_index = BigEndian::read_u32(&last_index);
+        Ok(last_index)
     }
 
     fn get_keypair(&self, txn: &RoTxn, index: u32) -> Result<ed25519_dalek::Keypair, Error> {
