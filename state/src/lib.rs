@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 #[derive(Clone)]
 pub struct State<A, C> {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
-    pub last_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
+    pub pending_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
     pub last_withdrawal_bundle_failure_height: Database<OwnedType<u32>, OwnedType<u32>>,
     pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
     pub _body: PhantomData<A>,
@@ -28,13 +28,13 @@ impl<
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
         let utxos = env.create_database(Some("utxos"))?;
 
-        let last_withdrawal_bundle = env.create_database(Some("last_withdrawal_bundle"))?;
+        let pending_withdrawal_bundle = env.create_database(Some("pending_withdrawal_bundle"))?;
         let last_withdrawal_bundle_failure_height =
             env.create_database(Some("last_withdrawal_bundle_failure_height"))?;
         let last_deposit_block = env.create_database(Some("last_deposit_block"))?;
         Ok(Self {
             utxos,
-            last_withdrawal_bundle,
+            pending_withdrawal_bundle,
             last_withdrawal_bundle_failure_height,
             last_deposit_block,
             _body: PhantomData::default(),
@@ -228,7 +228,7 @@ impl<
         &self,
         txn: &RoTxn,
     ) -> Result<Option<WithdrawalBundle<C>>, Error> {
-        Ok(self.last_withdrawal_bundle.get(txn, &0)?)
+        Ok(self.pending_withdrawal_bundle.get(txn, &0)?)
     }
 
     pub fn validate_filled_transaction(
@@ -315,17 +315,18 @@ impl<
             .unwrap_or(0);
         if (block_height + 1) - last_withdrawal_bundle_failure_height
             > Self::WITHDRAWAL_BUNDLE_FAILURE_GAP
+            && self.pending_withdrawal_bundle.get(txn, &0)?.is_none()
         {
             if let Some(bundle) = self.collect_withdrawal_bundle(txn, block_height + 1)? {
                 dbg!(&bundle);
                 for outpoint in bundle.spent_utxos.keys() {
                     self.utxos.delete(txn, outpoint)?;
                 }
-                self.last_withdrawal_bundle.put(txn, &0, &bundle)?;
+                self.pending_withdrawal_bundle.put(txn, &0, &bundle)?;
             }
         }
         for (txid, status) in &two_way_peg_data.bundle_statuses {
-            if let Some(bundle) = self.last_withdrawal_bundle.get(txn, &0)? {
+            if let Some(bundle) = self.pending_withdrawal_bundle.get(txn, &0)? {
                 if bundle.transaction.txid() != *txid {
                     continue;
                 }
@@ -336,13 +337,13 @@ impl<
                             &0,
                             &(block_height + 1),
                         )?;
-                        self.last_withdrawal_bundle.delete(txn, &0)?;
+                        self.pending_withdrawal_bundle.delete(txn, &0)?;
                         for (outpoint, output) in &bundle.spent_utxos {
                             self.utxos.put(txn, outpoint, output)?;
                         }
                     }
                     WithdrawalBundleStatus::Confirmed => {
-                        self.last_withdrawal_bundle.delete(txn, &0)?;
+                        self.pending_withdrawal_bundle.delete(txn, &0)?;
                     }
                 }
             }

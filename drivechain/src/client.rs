@@ -124,6 +124,13 @@ pub trait Main {
     #[method(name = "generate")]
     async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
+    #[method(name = "getnewaddress")]
+    async fn getnewaddress(
+        &self,
+        account: &str,
+        address_type: &str,
+    ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(
         &self,

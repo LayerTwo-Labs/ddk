@@ -205,6 +205,11 @@ where
         Ok((returned_transactions, fee))
     }
 
+    pub fn get_pending_withdrawal_bundle(&self) -> Result<Option<WithdrawalBundle<C>>, Error> {
+        let txn = self.env.read_txn()?;
+        Ok(self.state.get_pending_withdrawal_bundle(&txn)?)
+    }
+
     pub async fn submit_block(&self, header: &Header, body: &Body<A, C>) -> Result<(), Error> {
         let last_deposit_block_hash = {
             let txn = self.env.read_txn()?;
