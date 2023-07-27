@@ -1,0 +1,116 @@
+# This workflow should enforce monotonically increasing comment coverage
+
+on: [pull_request]
+
+name: Comment Coverage
+
+#env:
+#  CARGO_TERM_COLOR: always
+
+jobs:
+  check-lint-build-stable:
+    name: Comment Coverage (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+
+      - name: Install latest stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+          target: x86_64-pc-windows-gnu
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.5.1
+      
+      - name: Checkout PR branch
+        uses: actions/checkout@v2
+
+      - name: Missing docs warnings (PR)
+        id: missing_docs_warnings_pr
+        run: |
+          # use a random EOF, as per GitHub security recommendations
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          WARNINGS=$(\
+            cargo -q clippy --message-format=short -- \
+                -Aclippy::all \
+                -Wclippy::missing_errors_doc \
+                -Wclippy::missing_panics_doc \
+                -Wclippy::missing_safety_doc \
+                -Wclippy::missing_docs_in_private_items \
+                -Wmissing_docs \
+                2>&1)
+          echo "$WARNINGS"
+          AWKSTR='/warning: `.+` \(lib\) generated [0-9]+ warnings?/ { print $3 ": " $7 }'
+          WARNINGS=$(echo "$WARNINGS" | awk -F"[\` ]" "$AWKSTR" | sort)
+          echo "PR_WARNINGS<<$EOF" >> "$GITHUB_OUTPUT"
+          echo "$WARNINGS" >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+      
+      - name: Checkout target branch
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.base_ref }}
+      
+      - name: Missing docs warnings (Target)
+        id: missing_docs_warnings_target
+        run: |
+          # use a random EOF, as per GitHub security recommendations
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          WARNINGS=$(\
+            cargo -q clippy --message-format=short -- \
+                -Aclippy::all \
+                -Wclippy::missing_errors_doc \
+                -Wclippy::missing_panics_doc \
+                -Wclippy::missing_safety_doc \
+                -Wclippy::missing_docs_in_private_items \
+                -Wmissing_docs \
+                2>&1)
+          echo "$WARNINGS"
+          AWKSTR='/warning: `.+` \(lib\) generated [0-9]+ warnings?/ { print $3 ": " $7 }'
+          WARNINGS=$(echo "$WARNINGS" | awk -F"[\` ]" "$AWKSTR" | sort)
+          echo "TARGET_WARNINGS<<$EOF" >> "$GITHUB_OUTPUT"
+          echo "$WARNINGS" >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+      
+      - name: Compare comment coverage
+        run: |
+          PR_WARNINGS="${{steps.missing_docs_warnings_pr.outputs.PR_WARNINGS}}"
+          TARGET_WARNINGS="${{ steps.missing_docs_warnings_target.outputs.TARGET_WARNINGS }}"
+          readarray -t missing_docs_warnings_pr_arr <<< "$PR_WARNINGS"
+          readarray -t missing_docs_warnings_target_arr <<< "$TARGET_WARNINGS"
+          for pr_warnings_line in "${missing_docs_warnings_pr_arr[@]}"
+          do
+            # Extract the libname and number of warnings from the line
+            IFS=': ' read -r libname nwarnings_pr <<< "$pr_warnings_line"
+            # Look for the libname in the target warnings
+            target_warning_line=""
+            for target_warnings_line in "${missing_docs_warnings_target_arr[@]}"
+            do
+              if [[ $target_warnings_line == "$libname:"* ]]; then
+                target_warning_line=$target_warnings_line
+                break
+              fi
+            done
+
+            if [ -z "$target_warning_line" ]
+            then
+                echo "New warnings found for \`${libname}\`"
+                exit 1
+            fi
+
+            # Find the number of warnings for the target branch
+            IFS=': ' read -r _ nwarnings_target <<< "$target_warning_line"
+
+            # Compare the values
+            if [ "$nwarnings_target" -gt "$nwarnings_pr" ]
+            then
+                echo "Too many warnings for \`${libname}\` (${nwarnings_pr}): must be less than $nwarnings_target"
+                exit 1
+            fi
+          done
