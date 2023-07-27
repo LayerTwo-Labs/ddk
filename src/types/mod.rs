@@ -5,12 +5,11 @@ mod address;
 mod hashes;
 mod types;
 
-pub use types::*;
 pub use bitcoin;
+pub use blake3;
 pub use bs58;
 pub use serde;
-pub use blake3;
-
+pub use types::*;
 
 /*
 // Replace () with a type (usually an enum) for output data specific for your sidechain.

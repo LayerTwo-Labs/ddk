@@ -3,7 +3,16 @@ use bitcoin::hashes::Hash as _;
 const BLAKE3_LENGTH: usize = 32;
 pub type Hash = [u8; BLAKE3_LENGTH];
 
-#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct BlockHash(pub Hash);
 
 impl From<Hash> for BlockHash {
@@ -43,7 +52,16 @@ impl std::fmt::Debug for BlockHash {
     }
 }
 
-#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct MerkleRoot(Hash);
 
 impl From<Hash> for MerkleRoot {
@@ -70,7 +88,16 @@ impl std::fmt::Debug for MerkleRoot {
     }
 }
 
-#[derive(Default, Clone, Copy, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct Txid(pub Hash);
 
 impl Txid {
@@ -110,7 +137,7 @@ impl std::fmt::Debug for Txid {
 }
 
 pub fn hash<T: serde::Serialize>(data: &T) -> Hash {
-    let data_serialized =
-        bincode::serialize(data).expect("failed to serialize a type to compute a hash");
+    let data_serialized = bincode::serialize(data)
+        .expect("failed to serialize a type to compute a hash");
     blake3::hash(&data_serialized).into()
 }

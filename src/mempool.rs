@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct MemPool<A, C> {
-    pub transactions: Database<OwnedType<[u8; 32]>, SerdeBincode<AuthorizedTransaction<A, C>>>,
+    pub transactions: Database<
+        OwnedType<[u8; 32]>,
+        SerdeBincode<AuthorizedTransaction<A, C>>,
+    >,
     pub spent_utxos: Database<SerdeBincode<OutPoint>, Unit>,
 }
 
@@ -40,8 +43,11 @@ impl<
             }
             self.spent_utxos.put(txn, input, &())?;
         }
-        self.transactions
-            .put(txn, &transaction.transaction.txid().into(), &transaction)?;
+        self.transactions.put(
+            txn,
+            &transaction.transaction.txid().into(),
+            &transaction,
+        )?;
         Ok(())
     }
 
