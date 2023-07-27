@@ -24,7 +24,11 @@ impl<C> Drivechain<C> {
             .nextblockhash
             .ok_or(Error::NoNextBlock { prev_main_hash })?;
         self.client
-            .verifybmm(&block_hash, &header.hash().into(), self.sidechain_number)
+            .verifybmm(
+                &block_hash,
+                &header.hash().into(),
+                self.sidechain_number,
+            )
             .await?;
         Ok(())
     }
@@ -38,7 +42,8 @@ impl<C> Drivechain<C> {
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
     ) -> Result<TwoWayPegData<C>, Error> {
-        let (deposits, deposit_block_hash) = self.get_deposit_outputs(end, start).await?;
+        let (deposits, deposit_block_hash) =
+            self.get_deposit_outputs(end, start).await?;
         let bundle_statuses = self.get_withdrawal_bundle_statuses().await?;
         let two_way_peg_data = TwoWayPegData {
             deposits,
@@ -65,18 +70,24 @@ impl<C> Drivechain<C> {
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<(HashMap<OutPoint, Output<C>>, Option<bitcoin::BlockHash>), Error> {
+    ) -> Result<(HashMap<OutPoint, Output<C>>, Option<bitcoin::BlockHash>), Error>
+    {
         let deposits = self
             .client
-            .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
+            .listsidechaindepositsbyblock(
+                self.sidechain_number,
+                Some(end),
+                start,
+            )
             .await?;
         let mut last_block_hash = None;
         let mut last_total = 0;
         let mut outputs = HashMap::new();
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
-            let transaction =
-                bitcoin::Transaction::consensus_decode(&mut std::io::Cursor::new(transaction))?;
+            let transaction = bitcoin::Transaction::consensus_decode(
+                &mut std::io::Cursor::new(transaction),
+            )?;
             if let Some(start) = start {
                 if deposit.hashblock == start {
                     last_total = transaction.output[deposit.nburnindex].value;
@@ -125,7 +136,10 @@ impl<C> Drivechain<C> {
         Ok(statuses)
     }
 
-    pub fn new(sidechain_number: u8, main_addr: SocketAddr) -> Result<Self, Error> {
+    pub fn new(
+        sidechain_number: u8,
+        main_addr: SocketAddr,
+    ) -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         let auth = format!("{}:{}", "user", "password");
         let header_value = format!(

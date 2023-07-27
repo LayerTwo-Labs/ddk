@@ -17,8 +17,12 @@ impl std::fmt::Display for OutPoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Regular { txid, vout } => write!(f, "regular {txid} {vout}"),
-            Self::Coinbase { merkle_root, vout } => write!(f, "coinbase {merkle_root} {vout}"),
-            Self::Deposit(bitcoin::OutPoint { txid, vout }) => write!(f, "deposit {txid} {vout}"),
+            Self::Coinbase { merkle_root, vout } => {
+                write!(f, "coinbase {merkle_root} {vout}")
+            }
+            Self::Deposit(bitcoin::OutPoint { txid, vout }) => {
+                write!(f, "deposit {txid} {vout}")
+            }
         }
     }
 }
@@ -144,7 +148,8 @@ impl<A, C: Clone + GetValue + Serialize> Body<A, C> {
                 .map(|t| t.transaction.inputs.len())
                 .sum(),
         );
-        let mut transactions = Vec::with_capacity(authorized_transactions.len());
+        let mut transactions =
+            Vec::with_capacity(authorized_transactions.len());
         for at in authorized_transactions.into_iter() {
             authorizations.extend(at.authorizations);
             transactions.push(at.transaction);
@@ -209,7 +214,9 @@ impl GetValue for () {
 
 pub trait Verify<C> {
     type Error;
-    fn verify_transaction(transaction: &AuthorizedTransaction<Self, C>) -> Result<(), Self::Error>
+    fn verify_transaction(
+        transaction: &AuthorizedTransaction<Self, C>,
+    ) -> Result<(), Self::Error>
     where
         Self: Sized;
     fn verify_body(body: &Body<Self, C>) -> Result<(), Self::Error>

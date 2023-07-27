@@ -1,6 +1,10 @@
 use crate::types::blake3;
-use crate::types::{Address, AuthorizedTransaction, Body, GetAddress, Transaction, Verify};
-pub use ed25519_dalek::{Keypair, PublicKey, Signature, SignatureError, Signer, Verifier};
+use crate::types::{
+    Address, AuthorizedTransaction, Body, GetAddress, Transaction, Verify,
+};
+pub use ed25519_dalek::{
+    Keypair, PublicKey, Signature, SignatureError, Signer, Verifier,
+};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -16,9 +20,13 @@ impl GetAddress for Authorization {
     }
 }
 
-impl<C: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync> Verify<C> for Authorization {
+impl<C: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync> Verify<C>
+    for Authorization
+{
     type Error = Error;
-    fn verify_transaction(transaction: &AuthorizedTransaction<Self, C>) -> Result<(), Self::Error>
+    fn verify_transaction(
+        transaction: &AuthorizedTransaction<Self, C>,
+    ) -> Result<(), Self::Error>
     where
         Self: Sized,
     {
@@ -56,16 +64,17 @@ pub fn verify_authorized_transaction<C: Clone + Serialize + Sync>(
     let messages: Vec<_> = std::iter::repeat(serialized_transaction.as_slice())
         .take(transaction.authorizations.len())
         .collect();
-    let (public_keys, signatures): (Vec<PublicKey>, Vec<Signature>) = transaction
-        .authorizations
-        .iter()
-        .map(
-            |Authorization {
-                 public_key,
-                 signature,
-             }| (public_key, signature),
-        )
-        .unzip();
+    let (public_keys, signatures): (Vec<PublicKey>, Vec<Signature>) =
+        transaction
+            .authorizations
+            .iter()
+            .map(
+                |Authorization {
+                     public_key,
+                     signature,
+                 }| (public_key, signature),
+            )
+            .unzip();
     ed25519_dalek::verify_batch(&messages, &signatures, &public_keys)?;
     Ok(())
 }
@@ -82,7 +91,8 @@ pub fn verify_authorizations<C: Clone + Serialize + Sync>(
         .par_iter()
         .map(bincode::serialize)
         .collect::<Result<_, _>>()?;
-    let serialized_transactions = serialized_transactions.iter().map(Vec::as_slice);
+    let serialized_transactions =
+        serialized_transactions.iter().map(Vec::as_slice);
     let messages = input_numbers.zip(serialized_transactions).flat_map(
         |(input_number, serialized_transaction)| {
             std::iter::repeat(serialized_transaction).take(input_number)
@@ -101,7 +111,9 @@ pub fn verify_authorizations<C: Clone + Serialize + Sync>(
             signatures: Vec::with_capacity(package_size),
             public_keys: Vec::with_capacity(package_size),
         };
-        for (authorization, message) in &pairs[i * package_size..(i + 1) * package_size] {
+        for (authorization, message) in
+            &pairs[i * package_size..(i + 1) * package_size]
+        {
             package.messages.push(*message);
             package.signatures.push(authorization.signature);
             package.public_keys.push(authorization.public_key);
@@ -128,7 +140,9 @@ pub fn verify_authorizations<C: Clone + Serialize + Sync>(
                  messages,
                  signatures,
                  public_keys,
-             }| ed25519_dalek::verify_batch(messages, signatures, public_keys),
+             }| {
+                ed25519_dalek::verify_batch(messages, signatures, public_keys)
+            },
         )
         .collect::<Result<(), SignatureError>>()?;
     Ok(())
@@ -146,7 +160,8 @@ pub fn authorize<C: Clone + Serialize>(
     addresses_keypairs: &[(Address, &Keypair)],
     transaction: Transaction<C>,
 ) -> Result<AuthorizedTransaction<Authorization, C>, Error> {
-    let mut authorizations: Vec<Authorization> = Vec::with_capacity(addresses_keypairs.len());
+    let mut authorizations: Vec<Authorization> =
+        Vec::with_capacity(addresses_keypairs.len());
     let message = bincode::serialize(&transaction)?;
     for (address, keypair) in addresses_keypairs {
         let hash_public_key = get_address(&keypair.public);
