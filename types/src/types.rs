@@ -96,6 +96,30 @@ pub struct FilledTransaction<C> {
     pub spent_utxos: Vec<Output<C>>,
 }
 
+impl<C: GetValue> FilledTransaction<C> {
+    pub fn get_value_in(&self) -> u64 {
+        self.spent_utxos.iter().map(GetValue::get_value).sum()
+    }
+
+    pub fn get_value_out(&self) -> u64 {
+        self.transaction
+            .outputs
+            .iter()
+            .map(GetValue::get_value)
+            .sum()
+    }
+
+    pub fn get_fee(&self) -> Option<u64> {
+        let value_in = self.get_value_in();
+        let value_out = self.get_value_out();
+        if value_in < value_out {
+            None
+        } else {
+            Some(value_in - value_out)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizedTransaction<A, C> {
     pub transaction: Transaction<C>,
