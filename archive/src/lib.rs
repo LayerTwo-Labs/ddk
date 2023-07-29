@@ -1,9 +1,9 @@
+use ddk_types::bitcoin::hashes::Hash;
+use ddk_types::*;
+use ddk_types::{hash, BlockHash, Body, GetValue};
 use heed::byteorder::{BigEndian, ByteOrder};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::bitcoin::hashes::Hash;
-use plain_types::*;
-use plain_types::{hash, BlockHash, Body, GetValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]

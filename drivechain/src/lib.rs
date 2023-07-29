@@ -1,9 +1,9 @@
 mod client;
 use base64::Engine as _;
 pub use client::MainClient;
+use ddk_types::bitcoin::consensus::{Decodable, Encodable};
+use ddk_types::*;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
-use plain_types::bitcoin::consensus::{Decodable, Encodable};
-use plain_types::*;
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Clone)]
@@ -154,7 +154,7 @@ pub enum Error {
     #[error("header error")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("address parse error")]
-    AddressParse(#[from] plain_types::AddressParseError),
+    AddressParse(#[from] ddk_types::AddressParseError),
     #[error("bitcoin consensus encode error")]
     BitcoinConsensusEncode(#[from] bitcoin::consensus::encode::Error),
     #[error("bitcoin hex error")]

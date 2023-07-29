@@ -1,6 +1,6 @@
+use ddk_net::{PeerState, Request, Response};
+use ddk_types::*;
 use heed::{RoTxn, RwTxn};
-use plain_net::{PeerState, Request, Response};
-use plain_types::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -15,12 +15,12 @@ pub const THIS_SIDECHAIN: u32 = 0;
 
 #[derive(Clone)]
 pub struct Node<A, C, S> {
-    pub net: plain_net::Net,
-    pub state: plain_state::State<A, C>,
+    pub net: ddk_net::Net,
+    pub state: ddk_state::State<A, C>,
     pub custom_state: S,
-    pub archive: plain_archive::Archive<A, C>,
-    pub mempool: plain_mempool::MemPool<A, C>,
-    pub drivechain: plain_drivechain::Drivechain<C>,
+    pub archive: ddk_archive::Archive<A, C>,
+    pub mempool: ddk_mempool::MemPool<A, C>,
+    pub drivechain: ddk_drivechain::Drivechain<C>,
     pub env: heed::Env,
 }
 
@@ -60,17 +60,17 @@ where
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(
-                plain_state::State::<A, C>::NUM_DBS
+                ddk_state::State::<A, C>::NUM_DBS
                     + S::NUM_DBS
-                    + plain_archive::Archive::<A, C>::NUM_DBS
-                    + plain_mempool::MemPool::<A, C>::NUM_DBS,
+                    + ddk_archive::Archive::<A, C>::NUM_DBS
+                    + ddk_mempool::MemPool::<A, C>::NUM_DBS,
             )
             .open(env_path)?;
-        let state = plain_state::State::new(&env)?;
-        let archive = plain_archive::Archive::new(&env)?;
-        let mempool = plain_mempool::MemPool::new(&env)?;
-        let drivechain = plain_drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
-        let net = plain_net::Net::new(bind_addr)?;
+        let state = ddk_state::State::new(&env)?;
+        let archive = ddk_archive::Archive::new(&env)?;
+        let mempool = ddk_mempool::MemPool::new(&env)?;
+        let drivechain = ddk_drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
+        let net = ddk_net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
         Ok(Self {
             net,
@@ -88,7 +88,7 @@ where
         Ok(self.archive.get_height(&txn)?)
     }
 
-    pub fn get_best_hash(&self) -> Result<plain_types::BlockHash, Error> {
+    pub fn get_best_hash(&self) -> Result<ddk_types::BlockHash, Error> {
         let txn = self.env.read_txn()?;
         Ok(self.archive.get_best_hash(&txn)?)
     }
@@ -105,11 +105,11 @@ where
             .zip(filled_transaction.spent_utxos.iter())
         {
             if authorization.get_address() != spent_utxo.address {
-                return Err(plain_state::Error::WrongPubKeyForAddress.into());
+                return Err(ddk_state::Error::WrongPubKeyForAddress.into());
             }
         }
         if A::verify_transaction(transaction).is_err() {
-            return Err(plain_state::Error::AuthorizationError.into());
+            return Err(ddk_state::Error::AuthorizationError.into());
         }
         self.custom_state
             .validate_filled_transaction(txn, &self.state, &filled_transaction)?;
@@ -276,7 +276,7 @@ where
         Ok(())
     }
 
-    pub async fn heart_beat_listen(&self, peer: &plain_net::Peer) -> Result<(), Error> {
+    pub async fn heart_beat_listen(&self, peer: &ddk_net::Peer) -> Result<(), Error> {
         let message = match peer.connection.read_datagram().await {
             Ok(message) => message,
             Err(err) => {
@@ -287,7 +287,7 @@ where
                     .remove(&peer.connection.stable_id());
                 let addr = peer.connection.stable_id();
                 println!("connection {addr} closed");
-                return Err(plain_net::Error::from(err).into());
+                return Err(ddk_net::Error::from(err).into());
             }
         };
         let state: PeerState = bincode::deserialize(&message)?;
@@ -295,16 +295,16 @@ where
         Ok(())
     }
 
-    pub async fn peer_listen(&self, peer: &plain_net::Peer) -> Result<(), Error> {
+    pub async fn peer_listen(&self, peer: &ddk_net::Peer) -> Result<(), Error> {
         let (mut send, mut recv) = peer
             .connection
             .accept_bi()
             .await
-            .map_err(plain_net::Error::from)?;
+            .map_err(ddk_net::Error::from)?;
         let data = recv
-            .read_to_end(plain_net::READ_LIMIT)
+            .read_to_end(ddk_net::READ_LIMIT)
             .await
-            .map_err(plain_net::Error::from)?;
+            .map_err(ddk_net::Error::from)?;
         let message: Request<A, C> = bincode::deserialize(&data)?;
         match message {
             Request::GetBlock { height } => {
@@ -322,8 +322,8 @@ where
                 let response = bincode::serialize(&response)?;
                 send.write_all(&response)
                     .await
-                    .map_err(plain_net::Error::from)?;
-                send.finish().await.map_err(plain_net::Error::from)?;
+                    .map_err(ddk_net::Error::from)?;
+                send.finish().await.map_err(ddk_net::Error::from)?;
             }
             Request::PushTransaction { transaction } => {
                 let valid = {
@@ -336,7 +336,7 @@ where
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await
-                            .map_err(plain_net::Error::from)?;
+                            .map_err(ddk_net::Error::from)?;
                         return Err(err.into());
                     }
                     Ok(_) => {
@@ -360,7 +360,7 @@ where
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await
-                            .map_err(plain_net::Error::from)?;
+                            .map_err(ddk_net::Error::from)?;
                         return Ok(());
                     }
                 }
@@ -382,8 +382,7 @@ where
                             "already connected to {} refusing duplicate connection",
                             connection.remote_address()
                         );
-                        connection
-                            .close(plain_net::quinn::VarInt::from_u32(1), b"already connected");
+                        connection.close(ddk_net::quinn::VarInt::from_u32(1), b"already connected");
                     }
                 }
                 if connection.close_reason().is_some() {
@@ -394,7 +393,7 @@ where
                     connection.remote_address(),
                     connection.stable_id(),
                 );
-                let peer = plain_net::Peer {
+                let peer = ddk_net::Peer {
                     state: Arc::new(RwLock::new(None)),
                     connection,
                 };
@@ -491,15 +490,15 @@ pub enum Error {
     #[error("quinn error")]
     Io(#[from] std::io::Error),
     #[error("net error")]
-    Net(#[from] plain_net::Error),
+    Net(#[from] ddk_net::Error),
     #[error("archive error")]
-    Archive(#[from] plain_archive::Error),
+    Archive(#[from] ddk_archive::Error),
     #[error("drivechain error")]
-    Drivechain(#[from] plain_drivechain::Error),
+    Drivechain(#[from] ddk_drivechain::Error),
     #[error("mempool error")]
-    MemPool(#[from] plain_mempool::Error),
+    MemPool(#[from] ddk_mempool::Error),
     #[error("state error")]
-    State(#[from] plain_state::Error),
+    State(#[from] ddk_state::Error),
     #[error("bincode error")]
     Bincode(#[from] bincode::Error),
 }
@@ -511,19 +510,19 @@ pub trait State<A, C>: Sized {
     fn validate_filled_transaction(
         &self,
         txn: &RoTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         transaction: &FilledTransaction<C>,
     ) -> Result<(), Self::Error>;
     fn validate_body(
         &self,
         txn: &RoTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error>;
     fn connect_body(
         &self,
         txn: &mut RwTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error>;
 }
@@ -537,7 +536,7 @@ impl<A, C> State<A, C> for () {
     fn validate_filled_transaction(
         &self,
         txn: &RoTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         transaction: &FilledTransaction<C>,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -545,7 +544,7 @@ impl<A, C> State<A, C> for () {
     fn validate_body(
         &self,
         txn: &RoTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
         Ok(())
@@ -553,7 +552,7 @@ impl<A, C> State<A, C> for () {
     fn connect_body(
         &self,
         txn: &mut RwTxn,
-        state: &plain_state::State<A, C>,
+        state: &ddk_state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
         Ok(())

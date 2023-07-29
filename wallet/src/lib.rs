@@ -1,12 +1,10 @@
 use byteorder::{BigEndian, ByteOrder};
+pub use ddk_authorization::{get_address, Authorization};
+use ddk_types::bitcoin::bech32::ToBase32;
+use ddk_types::{bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction};
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn};
-pub use plain_authorization::{get_address, Authorization};
-use plain_types::bitcoin::bech32::ToBase32;
-use plain_types::{
-    bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -14,7 +12,7 @@ use std::path::Path;
 #[derive(Clone)]
 pub struct Wallet<C> {
     env: heed::Env,
-    // FIXME: Don't store the seed in plaintext.
+    // FIXME: Don't store the seed in ddktext.
     seed: Database<OwnedType<u8>, OwnedType<[u8; 64]>>,
     pub address_to_index: Database<SerdeBincode<Address>, OwnedType<[u8; 4]>>,
     pub index_to_address: Database<OwnedType<[u8; 4]>, SerdeBincode<Address>>,
@@ -71,7 +69,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let outputs = vec![
             Output {
                 address: self.get_new_address()?,
-                content: plain_types::Content::Withdrawal {
+                content: ddk_types::Content::Withdrawal {
                     value,
                     main_fee,
                     main_address,
@@ -79,7 +77,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
             },
             Output {
                 address: self.get_new_address()?,
-                content: plain_types::Content::Value(change),
+                content: ddk_types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -97,11 +95,11 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let outputs = vec![
             Output {
                 address,
-                content: plain_types::Content::Value(value),
+                content: ddk_types::Content::Value(value),
             },
             Output {
                 address: self.get_new_address()?,
-                content: plain_types::Content::Value(change),
+                content: ddk_types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -197,7 +195,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
                 })?;
             let index = BigEndian::read_u32(&index);
             let keypair = self.get_keypair(&txn, index)?;
-            let signature = plain_authorization::sign(&keypair, &transaction)?;
+            let signature = ddk_authorization::sign(&keypair, &transaction)?;
             authorizations.push(Authorization {
                 public_key: keypair.public,
                 signature,
@@ -259,7 +257,7 @@ pub enum Error {
     #[error("bip32 error")]
     Bip32(#[from] ed25519_dalek_bip32::Error),
     #[error("address {address} does not exist")]
-    AddressDoesNotExist { address: plain_types::Address },
+    AddressDoesNotExist { address: ddk_types::Address },
     #[error("utxo doesn't exist")]
     NoUtxo,
     #[error("wallet doesn't have a seed")]
@@ -267,7 +265,7 @@ pub enum Error {
     #[error("no index for address {address}")]
     NoIndex { address: Address },
     #[error("authorization error")]
-    Authorization(#[from] plain_authorization::Error),
+    Authorization(#[from] ddk_authorization::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("not enough funds")]

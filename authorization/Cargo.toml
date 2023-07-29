@@ -1,12 +1,12 @@
 [package]
-name = "plain_authorization"
+name = "ddk_authorization"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plain_types = { path = "../types" }
+ddk_types = { path = "../types" }
 ed25519-dalek = { version = "1.0.1", features = ["serde", "batch"] }
 rayon = "1.7.0"
 serde = "1.0.164"

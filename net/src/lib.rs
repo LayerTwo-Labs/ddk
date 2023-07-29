@@ -1,5 +1,5 @@
 use anyhow::Result;
-use plain_types::{AuthorizedTransaction, Body, Header};
+use ddk_types::{AuthorizedTransaction, Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -217,11 +217,11 @@ pub enum Error {
     #[error("quinn rustls error")]
     QuinnRustls(#[from] quinn::crypto::rustls::Error),
     #[error("archive error")]
-    Archive(#[from] plain_archive::Error),
+    Archive(#[from] ddk_archive::Error),
     #[error("drivechain error")]
-    Drivechain(#[from] plain_drivechain::Error),
+    Drivechain(#[from] ddk_drivechain::Error),
     #[error("mempool error")]
-    MemPool(#[from] plain_mempool::Error),
+    MemPool(#[from] ddk_mempool::Error),
     #[error("bincode error")]
     Bincode(#[from] bincode::Error),
     #[error("already connected to peer at {0}")]

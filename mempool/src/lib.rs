@@ -1,6 +1,6 @@
+use ddk_types::{AuthorizedTransaction, OutPoint, Txid};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
-use plain_types::{AuthorizedTransaction, OutPoint, Txid};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]

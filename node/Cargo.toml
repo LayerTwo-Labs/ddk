@@ -1,17 +1,17 @@
 [package]
-name = "plain_node"
+name = "ddk_node"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plain_net = { path = "../net" }
-plain_archive = { path = "../archive" }
-plain_types = { path = "../types" }
-plain_state = { path = "../state" }
-plain_mempool = { path = "../mempool" }
-plain_drivechain = { path = "../drivechain" }
+ddk_net = { path = "../net" }
+ddk_archive = { path = "../archive" }
+ddk_types = { path = "../types" }
+ddk_state = { path = "../state" }
+ddk_mempool = { path = "../mempool" }
+ddk_drivechain = { path = "../drivechain" }
 
 heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
 thiserror = "1.0.40"

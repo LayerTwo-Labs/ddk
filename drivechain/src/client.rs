@@ -1,6 +1,6 @@
 use bitcoin::amount::serde::SerdeAmount;
+use ddk_types::bitcoin;
 use jsonrpsee::proc_macros::rpc;
-use plain_types::bitcoin;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
