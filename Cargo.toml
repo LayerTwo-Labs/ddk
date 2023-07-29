@@ -4,7 +4,6 @@ members = [
 "types",
 "state",
 "archive",
-"api",
 "wallet",
 "miner",
 "net",

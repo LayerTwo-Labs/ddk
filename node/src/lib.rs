@@ -11,8 +11,6 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-pub mod api;
-
 pub const THIS_SIDECHAIN: u32 = 0;
 
 #[derive(Clone)]
