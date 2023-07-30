@@ -12,3 +12,7 @@ ddk_authorization = { path = "../authorization" }
 ddk_state = { path = "../state" }
 ddk_wallet = { path = "../wallet" }
 ddk_miner = { path = "../miner" }
+ddk_net = { path = "../net" }
+ddk_archive = { path = "../archive" }
+ddk_mempool = { path = "../mempool" }
+heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
