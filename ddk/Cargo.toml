@@ -1,9 +1,11 @@
 [package]
 name = "ddk"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords = ["blockchain", "bitcoin"]
+repository = "https://github.com/LayerTwo-Labs/ddk"
+description = "Drivechain Development Kit - a software framework for building BIP300 + BIP301 sidechains."
+authors = [ "Nikita Chashchinskii" ]
 
 [dependencies]
 ddk_types = { path = "../types" }
