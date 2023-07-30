@@ -8,13 +8,13 @@ description = "Drivechain Development Kit - a software framework for building BI
 authors = [ "Nikita Chashchinskii" ]
 
 [dependencies]
-ddk_types = { path = "../types" }
-ddk_node = { path = "../node" }
-ddk_authorization = { path = "../authorization" }
-ddk_state = { path = "../state" }
-ddk_wallet = { path = "../wallet" }
-ddk_miner = { path = "../miner" }
-ddk_net = { path = "../net" }
-ddk_archive = { path = "../archive" }
-ddk_mempool = { path = "../mempool" }
-heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4" }
+ddk_types = { path = "../types", version = "0.1" }
+ddk_node = { path = "../node", version = "0.1" }
+ddk_authorization = { path = "../authorization", version = "0.1" }
+ddk_state = { path = "../state", version = "0.1" }
+ddk_wallet = { path = "../wallet", version = "0.1" }
+ddk_miner = { path = "../miner", version = "0.1" }
+ddk_net = { path = "../net", version = "0.1" }
+ddk_archive = { path = "../archive", version = "0.1" }
+ddk_mempool = { path = "../mempool", version = "0.1" }
+heed = { git = "https://github.com/meilisearch/heed", tag = "v0.12.4", version = "0.12.4" }

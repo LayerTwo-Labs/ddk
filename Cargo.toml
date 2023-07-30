@@ -11,4 +11,5 @@ members = [
 "mempool",
 "node",
 "authorization",
+"ddk",
 ]
