@@ -1,11 +1,11 @@
 mod client;
-use base64::Engine as _;
-pub use client::MainClient;
 use crate::types::bitcoin::consensus::{Decodable, Encodable};
 use crate::types::*;
+use base64::Engine as _;
+pub use client::MainClient;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
-use std::{collections::HashMap, marker::PhantomData};
 use std::net::SocketAddr;
+use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Clone)]
 pub struct Drivechain<C> {
@@ -138,7 +138,7 @@ impl<C> Drivechain<C> {
         headers.insert("authorization", header_value);
         let client = HttpClientBuilder::default()
             .set_headers(headers.clone())
-            .build(format!("{main_addr}"))?;
+            .build(format!("http://{main_addr}"))?;
         Ok(Drivechain {
             sidechain_number,
             client,
