@@ -536,38 +536,3 @@ pub trait State<A, C>: Sized {
         body: &Body<A, C>,
     ) -> Result<(), Self::Error>;
 }
-
-impl<A, C> State<A, C> for () {
-    type Error = Error;
-    const NUM_DBS: u32 = 0;
-    fn new(_env: &heed::Env) -> Result<Self, Self::Error> {
-        Ok(())
-    }
-    fn validate_filled_transaction(
-        &self,
-        _txn: &RoTxn,
-        _height: u32,
-        _state: &crate::state::State<A, C>,
-        _transaction: &FilledTransaction<C>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn validate_body(
-        &self,
-        _txn: &RoTxn,
-        _height: u32,
-        _state: &crate::state::State<A, C>,
-        _body: &Body<A, C>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-    fn connect_body(
-        &self,
-        _txn: &mut RwTxn,
-        _height: u32,
-        _state: &crate::state::State<A, C>,
-        _body: &Body<A, C>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
