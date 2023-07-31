@@ -111,8 +111,13 @@ where
         if A::verify_transaction(transaction).is_err() {
             return Err(crate::state::Error::AuthorizationError.into());
         }
-        self.custom_state
-            .validate_filled_transaction(txn, &self.state, &filled_transaction)?;
+        let height = self.archive.get_height(&txn)?;
+        self.custom_state.validate_filled_transaction(
+            txn,
+            height,
+            &self.state,
+            &filled_transaction,
+        )?;
         let fee = self
             .state
             .validate_filled_transaction(&filled_transaction)?;
@@ -220,11 +225,12 @@ where
                 .await?;
             let mut txn = self.env.write_txn()?;
             self.state.validate_body(&txn, &body)?;
-            self.custom_state.validate_body(&txn, &self.state, &body)?;
+            let height = self.archive.get_height(&txn)?;
+            self.custom_state
+                .validate_body(&txn, height, &self.state, &body)?;
             self.state.connect_body(&mut txn, &body)?;
             self.custom_state
-                .connect_body(&mut txn, &self.state, &body)?;
-            let height = self.archive.get_height(&txn)?;
+                .connect_body(&mut txn, height, &self.state, &body)?;
             self.state
                 .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
             let bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
@@ -511,18 +517,21 @@ pub trait State<A, C>: Sized {
     fn validate_filled_transaction(
         &self,
         txn: &RoTxn,
+        height: u32,
         state: &crate::state::State<A, C>,
         transaction: &FilledTransaction<C>,
     ) -> Result<(), Self::Error>;
     fn validate_body(
         &self,
         txn: &RoTxn,
+        height: u32,
         state: &crate::state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error>;
     fn connect_body(
         &self,
         txn: &mut RwTxn,
+        height: u32,
         state: &crate::state::State<A, C>,
         body: &Body<A, C>,
     ) -> Result<(), Self::Error>;
@@ -537,6 +546,7 @@ impl<A, C> State<A, C> for () {
     fn validate_filled_transaction(
         &self,
         _txn: &RoTxn,
+        _height: u32,
         _state: &crate::state::State<A, C>,
         _transaction: &FilledTransaction<C>,
     ) -> Result<(), Self::Error> {
@@ -545,6 +555,7 @@ impl<A, C> State<A, C> for () {
     fn validate_body(
         &self,
         _txn: &RoTxn,
+        _height: u32,
         _state: &crate::state::State<A, C>,
         _body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
@@ -553,6 +564,7 @@ impl<A, C> State<A, C> for () {
     fn connect_body(
         &self,
         _txn: &mut RwTxn,
+        _height: u32,
         _state: &crate::state::State<A, C>,
         _body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
