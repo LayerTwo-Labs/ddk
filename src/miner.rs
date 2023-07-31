@@ -1,10 +1,10 @@
 use bitcoin::hashes::Hash as _;
-use ddk_drivechain::Drivechain;
-use ddk_types::*;
+use crate::drivechain::Drivechain;
+use crate::types::*;
 use jsonrpsee::core::Serialize;
 use std::str::FromStr as _;
 
-pub use ddk_drivechain::MainClient;
+pub use crate::drivechain::MainClient;
 
 #[derive(Clone)]
 pub struct Miner<A, C> {
@@ -28,7 +28,7 @@ impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
             .client
             .generate(1)
             .await
-            .map_err(ddk_drivechain::Error::from)?;
+            .map_err(crate::drivechain::Error::from)?;
         Ok(())
     }
 
@@ -53,9 +53,9 @@ impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
                 &str_hash_prev[str_hash_prev.len() - 8..],
             )
             .await
-            .map_err(ddk_drivechain::Error::from)?;
+            .map_err(crate::drivechain::Error::from)?;
         bitcoin::Txid::from_str(value["txid"]["txid"].as_str().ok_or(Error::InvalidJson)?)
-            .map_err(ddk_drivechain::Error::from)?;
+            .map_err(crate::drivechain::Error::from)?;
         assert_eq!(header.merkle_root, body.compute_merkle_root());
         self.block = Some((header, body));
         Ok(())
@@ -73,7 +73,7 @@ impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("drivechain error")]
-    Drivechain(#[from] ddk_drivechain::Error),
+    Drivechain(#[from] crate::drivechain::Error),
     #[error("invalid jaon")]
     InvalidJson,
 }

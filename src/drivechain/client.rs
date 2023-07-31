@@ -1,5 +1,4 @@
 use bitcoin::amount::serde::SerdeAmount;
-use ddk_types::bitcoin;
 use jsonrpsee::proc_macros::rpc;
 use std::ops::{Deref, DerefMut};
 

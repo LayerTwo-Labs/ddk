@@ -1,4 +1,4 @@
-use ddk_types::{AuthorizedTransaction, OutPoint, Txid};
+use crate::types::{AuthorizedTransaction, OutPoint, Txid};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};

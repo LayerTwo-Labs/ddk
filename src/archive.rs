@@ -1,6 +1,6 @@
-use ddk_types::bitcoin::hashes::Hash;
-use ddk_types::*;
-use ddk_types::{hash, BlockHash, Body, GetValue};
+use crate::types::bitcoin::hashes::Hash;
+use crate::types::*;
+use crate::types::{hash, BlockHash, Body, GetValue};
 use heed::byteorder::{BigEndian, ByteOrder};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
