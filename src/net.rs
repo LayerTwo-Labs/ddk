@@ -1,4 +1,3 @@
-use anyhow::Result;
 use crate::types::{AuthorizedTransaction, Body, Header};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
