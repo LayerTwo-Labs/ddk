@@ -45,15 +45,13 @@ impl<
             + 'static,
         S: Clone + State<A, C> + Send + Sync + 'static,
     > Node<A, C, S>
-where
-    Error: From<<S as State<A, C>>::Error>,
 {
     pub fn new(
         datadir: &Path,
         bind_addr: SocketAddr,
         main_host: &str,
         main_port: u32,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Error<<S as State<A, C>>::Error>> {
         let env_path = datadir.join("data.mdb");
         // let _ = std::fs::remove_dir_all(&env_path);
         std::fs::create_dir_all(&env_path)?;
@@ -83,12 +81,14 @@ where
         })
     }
 
-    pub fn get_height(&self) -> Result<u32, Error> {
+    pub fn get_height(&self) -> Result<u32, Error<<S as State<A, C>>::Error>> {
         let txn = self.env.read_txn()?;
         Ok(self.archive.get_height(&txn)?)
     }
 
-    pub fn get_best_hash(&self) -> Result<crate::types::BlockHash, Error> {
+    pub fn get_best_hash(
+        &self,
+    ) -> Result<crate::types::BlockHash, Error<<S as State<A, C>>::Error>> {
         let txn = self.env.read_txn()?;
         Ok(self.archive.get_best_hash(&txn)?)
     }
@@ -97,7 +97,7 @@ where
         &self,
         txn: &RoTxn,
         transaction: &AuthorizedTransaction<A, C>,
-    ) -> Result<u64, Error> {
+    ) -> Result<u64, Error<<S as State<A, C>>::Error>> {
         let filled_transaction = self.state.fill_transaction(txn, &transaction.transaction)?;
         for (authorization, spent_utxo) in transaction
             .authorizations
@@ -127,7 +127,7 @@ where
     pub async fn submit_transaction(
         &self,
         transaction: &AuthorizedTransaction<A, C>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
         {
             let mut txn = self.env.write_txn()?;
             self.validate_transaction(&txn, &transaction)?;
@@ -143,7 +143,10 @@ where
         Ok(())
     }
 
-    pub fn get_spent_utxos(&self, outpoints: &[OutPoint]) -> Result<Vec<OutPoint>, Error> {
+    pub fn get_spent_utxos(
+        &self,
+        outpoints: &[OutPoint],
+    ) -> Result<Vec<OutPoint>, Error<<S as State<A, C>>::Error>> {
         let txn = self.env.read_txn()?;
         let mut spent = vec![];
         for outpoint in outpoints {
@@ -157,7 +160,7 @@ where
     pub fn get_utxos_by_addresses(
         &self,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output<C>>, Error> {
+    ) -> Result<HashMap<OutPoint, Output<C>>, Error<<S as State<A, C>>::Error>> {
         let txn = self.env.read_txn()?;
         let utxos = self.state.get_utxos_by_addresses(&txn, addresses)?;
         Ok(utxos)
@@ -166,7 +169,7 @@ where
     pub fn get_transactions(
         &self,
         number: usize,
-    ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error> {
+    ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error<<S as State<A, C>>::Error>> {
         let mut txn = self.env.write_txn()?;
         let transactions = self.mempool.take(&txn, number)?;
         let mut fee: u64 = 0;
@@ -208,12 +211,18 @@ where
         Ok((returned_transactions, fee))
     }
 
-    pub fn get_pending_withdrawal_bundle(&self) -> Result<Option<WithdrawalBundle<C>>, Error> {
+    pub fn get_pending_withdrawal_bundle(
+        &self,
+    ) -> Result<Option<WithdrawalBundle<C>>, Error<<S as State<A, C>>::Error>> {
         let txn = self.env.read_txn()?;
         Ok(self.state.get_pending_withdrawal_bundle(&txn)?)
     }
 
-    pub async fn submit_block(&self, header: &Header, body: &Body<A, C>) -> Result<(), Error> {
+    pub async fn submit_block(
+        &self,
+        header: &Header,
+        body: &Body<A, C>,
+    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
         let last_deposit_block_hash = {
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
@@ -251,7 +260,7 @@ where
         Ok(())
     }
 
-    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error> {
+    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error<<S as State<A, C>>::Error>> {
         let peer = self.net.connect(addr).await?;
         let peer0 = peer.clone();
         let node0 = self.clone();
@@ -282,7 +291,10 @@ where
         Ok(())
     }
 
-    pub async fn heart_beat_listen(&self, peer: &crate::net::Peer) -> Result<(), Error> {
+    pub async fn heart_beat_listen(
+        &self,
+        peer: &crate::net::Peer,
+    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
         let message = match peer.connection.read_datagram().await {
             Ok(message) => message,
             Err(err) => {
@@ -301,7 +313,10 @@ where
         Ok(())
     }
 
-    pub async fn peer_listen(&self, peer: &crate::net::Peer) -> Result<(), Error> {
+    pub async fn peer_listen(
+        &self,
+        peer: &crate::net::Peer,
+    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
         let (mut send, mut recv) = peer
             .connection
             .accept_bi()
@@ -375,7 +390,7 @@ where
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Error> {
+    pub fn run(&mut self) -> Result<(), Error<<S as State<A, C>>::Error>> {
         // Listening to connections.
         let node = self.clone();
         tokio::spawn(async move {
@@ -488,8 +503,10 @@ where
     }
 }
 
+pub trait CustomError {}
+
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum Error<E: CustomError + Debug + Send + Sync> {
     #[error("heed error")]
     Heed(#[from] heed::Error),
     #[error("address parse error")]
@@ -508,10 +525,12 @@ pub enum Error {
     State(#[from] crate::state::Error),
     #[error("bincode error")]
     Bincode(#[from] bincode::Error),
+    #[error("custom error")]
+    Custom(#[from] E),
 }
 
 pub trait State<A, C>: Sized {
-    type Error;
+    type Error: CustomError + Debug + Send + Sync;
     const NUM_DBS: u32;
     fn new(env: &heed::Env) -> Result<Self, Self::Error>;
     fn validate_filled_transaction(
