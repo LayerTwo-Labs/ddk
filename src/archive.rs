@@ -1,4 +1,3 @@
-use crate::types::bitcoin::hashes::Hash;
 use crate::types::*;
 use crate::types::{hash, BlockHash, Body, GetValue};
 use heed::byteorder::{BigEndian, ByteOrder};
