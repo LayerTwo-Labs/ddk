@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ByteOrder};
-pub use ddk_authorization::{get_address, Authorization};
-use ddk_types::bitcoin::bech32::ToBase32;
-use ddk_types::{bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction};
+pub use crate::authorization::{get_address, Authorization};
+use crate::types::bitcoin::bech32::ToBase32;
+use crate::types::{bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction};
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn};
@@ -69,7 +69,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let outputs = vec![
             Output {
                 address: self.get_new_address()?,
-                content: ddk_types::Content::Withdrawal {
+                content: crate::types::Content::Withdrawal {
                     value,
                     main_fee,
                     main_address,
@@ -77,7 +77,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
             },
             Output {
                 address: self.get_new_address()?,
-                content: ddk_types::Content::Value(change),
+                content: crate::types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -95,11 +95,11 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let outputs = vec![
             Output {
                 address,
-                content: ddk_types::Content::Value(value),
+                content: crate::types::Content::Value(value),
             },
             Output {
                 address: self.get_new_address()?,
-                content: ddk_types::Content::Value(change),
+                content: crate::types::Content::Value(change),
             },
         ];
         Ok(Transaction { inputs, outputs })
@@ -195,7 +195,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
                 })?;
             let index = BigEndian::read_u32(&index);
             let keypair = self.get_keypair(&txn, index)?;
-            let signature = ddk_authorization::sign(&keypair, &transaction)?;
+            let signature = crate::authorization::sign(&keypair, &transaction)?;
             authorizations.push(Authorization {
                 public_key: keypair.public,
                 signature,
@@ -257,7 +257,7 @@ pub enum Error {
     #[error("bip32 error")]
     Bip32(#[from] ed25519_dalek_bip32::Error),
     #[error("address {address} does not exist")]
-    AddressDoesNotExist { address: ddk_types::Address },
+    AddressDoesNotExist { address: crate::types::Address },
     #[error("utxo doesn't exist")]
     NoUtxo,
     #[error("wallet doesn't have a seed")]
@@ -265,7 +265,7 @@ pub enum Error {
     #[error("no index for address {address}")]
     NoIndex { address: Address },
     #[error("authorization error")]
-    Authorization(#[from] ddk_authorization::Error),
+    Authorization(#[from] crate::authorization::Error),
     #[error("io error")]
     Io(#[from] std::io::Error),
     #[error("not enough funds")]

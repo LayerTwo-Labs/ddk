@@ -1,5 +1,5 @@
 // TODO: Turn this into a cargo generate template.
-use ddk_types::*;
+use crate::types::*;
 pub use heed;
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
@@ -18,7 +18,7 @@ pub struct State<A, C> {
 }
 
 impl<
-        A: ddk_types::Verify<C> + GetAddress,
+        A: crate::types::Verify<C> + GetAddress,
         C: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
     > State<A, C>
 {
@@ -188,7 +188,7 @@ impl<
             }],
         ]
         .concat();
-        let commitment = ddk_types::hash(&inputs);
+        let commitment = crate::types::hash(&inputs);
         let script = script::Builder::new()
             .push_opcode(opcodes::all::OP_RETURN)
             .push_slice(&commitment)

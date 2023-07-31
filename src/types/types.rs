@@ -1,5 +1,5 @@
-pub use crate::address::*;
-pub use crate::hashes::*;
+pub use crate::types::address::*;
+pub use crate::types::hashes::*;
 use bincode::config::Bounded;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
