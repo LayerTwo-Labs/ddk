@@ -15,13 +15,13 @@ pub const THIS_SIDECHAIN: u32 = 0;
 
 #[derive(Clone)]
 pub struct Node<A, C, S> {
-    pub net: crate::net::Net,
-    pub state: crate::state::State<A, C>,
-    pub custom_state: S,
-    pub archive: crate::archive::Archive<A, C>,
-    pub mempool: crate::mempool::MemPool<A, C>,
-    pub drivechain: crate::drivechain::Drivechain<C>,
-    pub env: heed::Env,
+    net: crate::net::Net,
+    state: crate::state::State<A, C>,
+    custom_state: S,
+    archive: crate::archive::Archive<A, C>,
+    mempool: crate::mempool::MemPool<A, C>,
+    drivechain: crate::drivechain::Drivechain<C>,
+    env: heed::Env,
 }
 
 impl<
@@ -213,8 +213,7 @@ where
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
         };
-        let mut bundle = None;
-        {
+        let bundle = {
             let two_way_peg_data = self
                 .drivechain
                 .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
@@ -228,14 +227,15 @@ where
             let height = self.archive.get_height(&txn)?;
             self.state
                 .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
-            bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
+            let bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
             self.archive.append_header(&mut txn, &header)?;
             self.archive.put_body(&mut txn, &header, &body)?;
             for transaction in &body.transactions {
                 self.mempool.delete(&mut txn, &transaction.txid())?;
             }
             txn.commit()?;
-        }
+            bundle
+        };
         if let Some(bundle) = bundle {
             let _ = self
                 .drivechain
@@ -382,7 +382,8 @@ where
                             "already connected to {} refusing duplicate connection",
                             connection.remote_address()
                         );
-                        connection.close(crate::net::quinn::VarInt::from_u32(1), b"already connected");
+                        connection
+                            .close(crate::net::quinn::VarInt::from_u32(1), b"already connected");
                     }
                 }
                 if connection.close_reason().is_some() {
@@ -535,25 +536,25 @@ impl<A, C> State<A, C> for () {
     }
     fn validate_filled_transaction(
         &self,
-        txn: &RoTxn,
-        state: &crate::state::State<A, C>,
-        transaction: &FilledTransaction<C>,
+        _txn: &RoTxn,
+        _state: &crate::state::State<A, C>,
+        _transaction: &FilledTransaction<C>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
     fn validate_body(
         &self,
-        txn: &RoTxn,
-        state: &crate::state::State<A, C>,
-        body: &Body<A, C>,
+        _txn: &RoTxn,
+        _state: &crate::state::State<A, C>,
+        _body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
     fn connect_body(
         &self,
-        txn: &mut RwTxn,
-        state: &crate::state::State<A, C>,
-        body: &Body<A, C>,
+        _txn: &mut RwTxn,
+        _state: &crate::state::State<A, C>,
+        _body: &Body<A, C>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

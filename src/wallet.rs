@@ -1,6 +1,5 @@
 use byteorder::{BigEndian, ByteOrder};
 pub use crate::authorization::{get_address, Authorization};
-use crate::types::bitcoin::bech32::ToBase32;
 use crate::types::{bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction};
 use ed25519_dalek_bip32::*;
 use heed::types::*;
