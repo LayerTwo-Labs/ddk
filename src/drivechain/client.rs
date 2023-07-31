@@ -11,14 +11,14 @@ pub struct WithdrawalStatus {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct SpentWithdrawal {
-    pub nsidechain: u32,
+    pub nsidechain: u8,
     pub hash: bitcoin::Txid,
     pub hashblock: bitcoin::BlockHash,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct FailedWithdrawal {
-    pub nsidechain: u32,
+    pub nsidechain: u8,
     pub hash: bitcoin::Txid,
 }
 
@@ -71,7 +71,7 @@ pub trait Main {
     #[method(name = "listwithdrawalstatus")]
     async fn listwithdrawalstatus(
         &self,
-        nsidechain: u32,
+        nsidechain: u8,
     ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
     #[method(name = "listspentwithdrawals")]
     async fn listspentwithdrawals(&self) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
@@ -93,7 +93,7 @@ pub trait Main {
         amount: AmountBtc,
         height: u32,
         criticalhash: &bitcoin::BlockHash,
-        nsidechain: u32,
+        nsidechain: u8,
         prevbytes: &str,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
     #[method(name = "verifybmm")]
@@ -101,13 +101,13 @@ pub trait Main {
         &self,
         blockhash: &bitcoin::BlockHash,
         criticalhash: &bitcoin::BlockHash,
-        nsidechain: u32,
+        nsidechain: u8,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     #[method(name = "listsidechaindepositsbyblock")]
     async fn listsidechaindepositsbyblock(
         &self,
-        nsidechain: u32,
+        nsidechain: u8,
         end_blockhash: Option<bitcoin::BlockHash>,
         start_blockhash: Option<bitcoin::BlockHash>,
     ) -> Result<Vec<Deposit>, jsonrpsee::core::Error>;
@@ -115,7 +115,7 @@ pub trait Main {
     #[method(name = "receivewithdrawalbundle")]
     async fn receivewithdrawalbundle(
         &self,
-        nsidechain: u32,
+        nsidechain: u8,
         // Raw transaction hex.
         rawtx: &str,
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
@@ -133,7 +133,7 @@ pub trait Main {
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(
         &self,
-        nsidechain: u32,
+        nsidechain: u8,
         depositaddress: &str,
         amount: AmountBtc,
         fee: AmountBtc,

@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct Drivechain<C> {
-    pub sidechain_number: u32,
+    pub sidechain_number: u8,
     pub client: HttpClient,
     pub _content: PhantomData<C>,
 }
@@ -127,7 +127,7 @@ impl<C> Drivechain<C> {
         Ok(statuses)
     }
 
-    pub fn new(sidechain_number: u32, main_addr: SocketAddr) -> Result<Self, Error> {
+    pub fn new(sidechain_number: u8, main_addr: SocketAddr) -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         let auth = format!("{}:{}", "user", "password");
         let header_value = format!(

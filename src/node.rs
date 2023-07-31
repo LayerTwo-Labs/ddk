@@ -11,8 +11,6 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-pub const THIS_SIDECHAIN: u32 = 0;
-
 #[derive(Clone)]
 pub struct Node<A, C, S> {
     net: crate::net::Net,
@@ -66,7 +64,8 @@ impl<
         let state = crate::state::State::new(&env)?;
         let archive = crate::archive::Archive::new(&env)?;
         let mempool = crate::mempool::MemPool::new(&env)?;
-        let drivechain = crate::drivechain::Drivechain::new(THIS_SIDECHAIN, main_addr)?;
+        let drivechain =
+            crate::drivechain::Drivechain::new(<S as State<A, C>>::THIS_SIDECHAIN, main_addr)?;
         let net = crate::net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
         Ok(Self {
@@ -531,6 +530,7 @@ pub enum Error<E: CustomError + Debug + Send + Sync> {
 pub trait State<A, C>: Sized {
     type Error: CustomError + Debug + Send + Sync;
     const NUM_DBS: u32;
+    const THIS_SIDECHAIN: u8;
     fn new(env: &heed::Env) -> Result<Self, Self::Error>;
     fn validate_filled_transaction(
         &self,

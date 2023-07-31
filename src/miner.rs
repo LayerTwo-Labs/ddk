@@ -11,11 +11,11 @@ pub use crate::drivechain::MainClient;
 pub struct Miner<A, C> {
     pub drivechain: Drivechain<C>,
     block: Option<(Header, Body<A, C>)>,
-    sidechain_number: u32,
+    sidechain_number: u8,
 }
 
 impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
-    pub fn new(sidechain_number: u32, main_addr: SocketAddr) -> Result<Self, Error> {
+    pub fn new(sidechain_number: u8, main_addr: SocketAddr) -> Result<Self, Error> {
         let drivechain = Drivechain::new(sidechain_number, main_addr)?;
         Ok(Self {
             drivechain,
