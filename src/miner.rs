@@ -1,7 +1,8 @@
-use bitcoin::hashes::Hash as _;
 use crate::drivechain::Drivechain;
 use crate::types::*;
+use bitcoin::hashes::Hash as _;
 use jsonrpsee::core::Serialize;
+use std::net::SocketAddr;
 use std::str::FromStr as _;
 
 pub use crate::drivechain::MainClient;
@@ -14,8 +15,8 @@ pub struct Miner<A, C> {
 }
 
 impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
-    pub fn new(sidechain_number: u32, host: &str, port: u32) -> Result<Self, Error> {
-        let drivechain = Drivechain::new(sidechain_number, host, port)?;
+    pub fn new(sidechain_number: u32, main_addr: SocketAddr) -> Result<Self, Error> {
+        let drivechain = Drivechain::new(sidechain_number, main_addr)?;
         Ok(Self {
             drivechain,
             sidechain_number,

@@ -49,8 +49,7 @@ impl<
     pub fn new(
         datadir: &Path,
         bind_addr: SocketAddr,
-        main_host: &str,
-        main_port: u32,
+        main_addr: SocketAddr,
     ) -> Result<Self, Error<<S as State<A, C>>::Error>> {
         let env_path = datadir.join("data.mdb");
         // let _ = std::fs::remove_dir_all(&env_path);
@@ -67,7 +66,7 @@ impl<
         let state = crate::state::State::new(&env)?;
         let archive = crate::archive::Archive::new(&env)?;
         let mempool = crate::mempool::MemPool::new(&env)?;
-        let drivechain = crate::drivechain::Drivechain::new(THIS_SIDECHAIN, main_host, main_port)?;
+        let drivechain = crate::drivechain::Drivechain::new(THIS_SIDECHAIN, main_addr)?;
         let net = crate::net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
         Ok(Self {

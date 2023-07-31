@@ -5,6 +5,7 @@ use crate::types::bitcoin::consensus::{Decodable, Encodable};
 use crate::types::*;
 use jsonrpsee::http_client::{HeaderMap, HttpClient, HttpClientBuilder};
 use std::{collections::HashMap, marker::PhantomData};
+use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct Drivechain<C> {
@@ -126,7 +127,7 @@ impl<C> Drivechain<C> {
         Ok(statuses)
     }
 
-    pub fn new(sidechain_number: u32, host: &str, port: u32) -> Result<Self, Error> {
+    pub fn new(sidechain_number: u32, main_addr: SocketAddr) -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         let auth = format!("{}:{}", "user", "password");
         let header_value = format!(
@@ -137,8 +138,7 @@ impl<C> Drivechain<C> {
         headers.insert("authorization", header_value);
         let client = HttpClientBuilder::default()
             .set_headers(headers.clone())
-            // http://localhost:18443
-            .build(format!("http://{host}:{port}"))?;
+            .build(format!("{main_addr}"))?;
         Ok(Drivechain {
             sidechain_number,
             client,
