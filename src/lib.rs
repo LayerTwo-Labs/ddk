@@ -9,4 +9,4 @@ pub mod mempool;
 pub mod authorization;
 pub mod drivechain;
 pub use heed;
-pub use serde;
+pub use bitcoin;

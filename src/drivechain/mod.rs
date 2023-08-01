@@ -73,7 +73,6 @@ impl<C> Drivechain<C> {
         let mut last_block_hash = None;
         let mut last_total = 0;
         let mut outputs = HashMap::new();
-        dbg!(last_total);
         for deposit in &deposits {
             let transaction = hex::decode(&deposit.txhex)?;
             let transaction =
@@ -98,8 +97,7 @@ impl<C> Drivechain<C> {
             last_block_hash = Some(deposit.hashblock);
             let address: Address = match deposit.strdest.parse() {
                 Ok(address) => address,
-                Err(err) => {
-                    dbg!(err);
+                Err(_) => {
                     continue;
                 }
             };

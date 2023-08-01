@@ -1,6 +1,8 @@
-use byteorder::{BigEndian, ByteOrder};
 pub use crate::authorization::{get_address, Authorization};
-use crate::types::{bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction};
+use crate::types::{
+    bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction,
+};
+use byteorder::{BigEndian, ByteOrder};
 use ed25519_dalek_bip32::*;
 use heed::types::*;
 use heed::{Database, RoTxn};
@@ -40,7 +42,7 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         })
     }
 
-    pub fn set_seed(&self, seed: [u8; 64]) -> Result<(), Error> {
+    pub fn set_seed(&self, seed: &[u8; 64]) -> Result<(), Error> {
         let mut txn = self.env.write_txn()?;
         self.seed.put(&mut txn, &0, &seed)?;
         self.address_to_index.clear(&mut txn)?;

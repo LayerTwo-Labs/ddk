@@ -174,7 +174,6 @@ impl<
         let mut returned_transactions = vec![];
         let mut spent_utxos = HashSet::new();
         for transaction in &transactions {
-            dbg!(&spent_utxos);
             let inputs: HashSet<_> = transaction.transaction.inputs.iter().copied().collect();
             if !spent_utxos.is_disjoint(&inputs) {
                 println!("UTXO double spent");

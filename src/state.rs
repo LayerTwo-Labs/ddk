@@ -217,7 +217,6 @@ impl<
                 max_weight: bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64,
             })?;
         }
-        dbg!(&transaction);
         Ok(Some(WithdrawalBundle {
             spent_utxos,
             transaction,
@@ -318,7 +317,6 @@ impl<
             && self.pending_withdrawal_bundle.get(txn, &0)?.is_none()
         {
             if let Some(bundle) = self.collect_withdrawal_bundle(txn, block_height + 1)? {
-                dbg!(&bundle);
                 for outpoint in bundle.spent_utxos.keys() {
                     self.utxos.delete(txn, outpoint)?;
                 }
