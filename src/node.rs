@@ -11,61 +11,93 @@ use std::{
 };
 use tokio::sync::RwLock;
 
+pub trait State<A, CustomTxExtension, CustomTxOutput>: Sized {
+    type Error: CustomError + Debug + Send + Sync;
+    const NUM_DBS: u32;
+    const THIS_SIDECHAIN: u8;
+    fn new(env: &heed::Env) -> Result<Self, Self::Error>;
+    fn validate_filled_transaction(
+        &self,
+        txn: &RoTxn,
+        height: u32,
+        state: &crate::state::State<A, CustomTxExtension, CustomTxOutput>,
+        transaction: &FilledTransaction<CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Self::Error>;
+    fn validate_body(
+        &self,
+        txn: &RoTxn,
+        height: u32,
+        state: &crate::state::State<A, CustomTxExtension, CustomTxOutput>,
+        body: &Body<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Self::Error>;
+    fn connect_body(
+        &self,
+        txn: &mut RwTxn,
+        height: u32,
+        state: &crate::state::State<A, CustomTxExtension, CustomTxOutput>,
+        body: &Body<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Self::Error>;
+}
+
 #[derive(Clone)]
-pub struct Node<A, C, S> {
+pub struct Node<A, CustomTxExtension, CustomTxOutput, S> {
     net: crate::net::Net,
-    state: crate::state::State<A, C>,
+    state: crate::state::State<A, CustomTxExtension, CustomTxOutput>,
     custom_state: S,
-    archive: crate::archive::Archive<A, C>,
-    mempool: crate::mempool::MemPool<A, C>,
-    drivechain: crate::drivechain::Drivechain<C>,
+    archive: crate::archive::Archive<A, CustomTxExtension, CustomTxOutput>,
+    mempool: crate::mempool::MemPool<A, CustomTxExtension, CustomTxOutput>,
+    drivechain: crate::drivechain::Drivechain<CustomTxExtension, CustomTxOutput>,
     env: heed::Env,
 }
 
-impl<
-        A: Verify<C>
-            + GetAddress
-            + Clone
-            + Debug
-            + Sync
-            + Send
-            + Serialize
-            + for<'de> Deserialize<'de>
-            + 'static,
-        C: Clone
-            + Debug
-            + Eq
-            + Serialize
-            + for<'de> Deserialize<'de>
-            + Sync
-            + Send
-            + GetValue
-            + 'static,
-        S: Clone + State<A, C> + Send + Sync + 'static,
-    > Node<A, C, S>
+impl<A, CustomTxExtension, CustomTxOutput, S> Node<A, CustomTxExtension, CustomTxOutput, S>
+where
+    A: Verify<CustomTxExtension, CustomTxOutput>
+        + GetAddress
+        + Clone
+        + Debug
+        + Sync
+        + Send
+        + Serialize
+        + for<'de> Deserialize<'de>
+        + 'static,
+    CustomTxExtension:
+        Clone + Debug + for<'de> Deserialize<'de> + Send + Serialize + Sync + 'static,
+    CustomTxOutput: Clone
+        + Debug
+        + Eq
+        + Serialize
+        + for<'de> Deserialize<'de>
+        + Sync
+        + Send
+        + GetValue
+        + 'static,
+    S: Clone + State<A, CustomTxExtension, CustomTxOutput> + Send + Sync + 'static,
 {
     pub fn new(
         datadir: &Path,
         bind_addr: SocketAddr,
         main_addr: SocketAddr,
-    ) -> Result<Self, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<Self, Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let env_path = datadir.join("data.mdb");
         // let _ = std::fs::remove_dir_all(&env_path);
         std::fs::create_dir_all(&env_path)?;
         let env = heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024) // 10MB
             .max_dbs(
-                crate::state::State::<A, C>::NUM_DBS
+                crate::state::State::<A, CustomTxExtension, CustomTxOutput>::NUM_DBS
                     + S::NUM_DBS
-                    + crate::archive::Archive::<A, C>::NUM_DBS
-                    + crate::mempool::MemPool::<A, C>::NUM_DBS,
+                    + crate::archive::Archive::<A, CustomTxExtension, CustomTxOutput>::NUM_DBS
+                    + crate::mempool::MemPool::<A, CustomTxExtension, CustomTxOutput>::NUM_DBS,
             )
             .open(env_path)?;
         let state = crate::state::State::new(&env)?;
         let archive = crate::archive::Archive::new(&env)?;
         let mempool = crate::mempool::MemPool::new(&env)?;
-        let drivechain =
-            crate::drivechain::Drivechain::new(<S as State<A, C>>::THIS_SIDECHAIN, main_addr)?;
+        let drivechain = crate::drivechain::Drivechain::new(
+            <S as State<A, CustomTxExtension, CustomTxOutput>>::THIS_SIDECHAIN,
+            main_addr,
+        )?;
         let net = crate::net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
         Ok(Self {
@@ -79,14 +111,19 @@ impl<
         })
     }
 
-    pub fn get_height(&self) -> Result<u32, Error<<S as State<A, C>>::Error>> {
+    pub fn get_height(
+        &self,
+    ) -> Result<u32, Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let txn = self.env.read_txn()?;
         Ok(self.archive.get_height(&txn)?)
     }
 
     pub fn get_best_hash(
         &self,
-    ) -> Result<crate::types::BlockHash, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        crate::types::BlockHash,
+        Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>,
+    > {
         let txn = self.env.read_txn()?;
         Ok(self.archive.get_best_hash(&txn)?)
     }
@@ -94,8 +131,8 @@ impl<
     pub fn validate_transaction(
         &self,
         txn: &RoTxn,
-        transaction: &AuthorizedTransaction<A, C>,
-    ) -> Result<u64, Error<<S as State<A, C>>::Error>> {
+        transaction: &AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<u64, Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let filled_transaction = self.state.fill_transaction(txn, &transaction.transaction)?;
         for (authorization, spent_utxo) in transaction
             .authorizations
@@ -109,7 +146,7 @@ impl<
         if A::verify_transaction(transaction).is_err() {
             return Err(crate::state::Error::AuthorizationError.into());
         }
-        let height = self.archive.get_height(&txn)?;
+        let height = self.archive.get_height(txn)?;
         self.custom_state.validate_filled_transaction(
             txn,
             height,
@@ -124,12 +161,12 @@ impl<
 
     pub async fn submit_transaction(
         &self,
-        transaction: &AuthorizedTransaction<A, C>,
-    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
+        transaction: &AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         {
             let mut txn = self.env.write_txn()?;
-            self.validate_transaction(&txn, &transaction)?;
-            self.mempool.put(&mut txn, &transaction)?;
+            self.validate_transaction(&txn, transaction)?;
+            self.mempool.put(&mut txn, transaction)?;
             txn.commit()?;
         }
         for peer in self.net.peers.read().await.values() {
@@ -144,7 +181,8 @@ impl<
     pub fn get_spent_utxos(
         &self,
         outpoints: &[OutPoint],
-    ) -> Result<Vec<OutPoint>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<Vec<OutPoint>, Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>>
+    {
         let txn = self.env.read_txn()?;
         let mut spent = vec![];
         for outpoint in outpoints {
@@ -158,7 +196,10 @@ impl<
     pub fn get_utxos_by_addresses(
         &self,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output<C>>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        HashMap<OutPoint, Output<CustomTxOutput>>,
+        Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>,
+    > {
         let txn = self.env.read_txn()?;
         let utxos = self.state.get_utxos_by_addresses(&txn, addresses)?;
         Ok(utxos)
@@ -166,7 +207,10 @@ impl<
 
     pub fn get_all_transactions(
         &self,
-    ) -> Result<Vec<AuthorizedTransaction<A, C>>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        Vec<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
+        Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>,
+    > {
         let txn = self.env.read_txn()?;
         let transactions = self.mempool.take_all(&txn)?;
         Ok(transactions)
@@ -175,7 +219,13 @@ impl<
     pub fn get_transactions(
         &self,
         number: usize,
-    ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        (
+            Vec<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
+            u64,
+        ),
+        Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>,
+    > {
         let mut txn = self.env.write_txn()?;
         let transactions = self.mempool.take(&txn, number)?;
         let mut fee: u64 = 0;
@@ -218,7 +268,10 @@ impl<
 
     pub fn get_pending_withdrawal_bundle(
         &self,
-    ) -> Result<Option<WithdrawalBundle<C>>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        Option<WithdrawalBundle<CustomTxOutput>>,
+        Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>,
+    > {
         let txn = self.env.read_txn()?;
         Ok(self.state.get_pending_withdrawal_bundle(&txn)?)
     }
@@ -226,8 +279,8 @@ impl<
     pub async fn submit_block(
         &self,
         header: &Header,
-        body: &Body<A, C>,
-    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
+        body: &Body<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let last_deposit_block_hash = {
             let txn = self.env.read_txn()?;
             self.state.get_last_deposit_block_hash(&txn)?
@@ -238,18 +291,18 @@ impl<
                 .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
                 .await?;
             let mut txn = self.env.write_txn()?;
-            self.state.validate_body(&txn, &body)?;
+            self.state.validate_body(&txn, body)?;
             let height = self.archive.get_height(&txn)?;
             self.custom_state
-                .validate_body(&txn, height, &self.state, &body)?;
-            self.state.connect_body(&mut txn, &body)?;
+                .validate_body(&txn, height, &self.state, body)?;
+            self.state.connect_body(&mut txn, body)?;
             self.custom_state
-                .connect_body(&mut txn, height, &self.state, &body)?;
+                .connect_body(&mut txn, height, &self.state, body)?;
             self.state
                 .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
             let bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
-            self.archive.append_header(&mut txn, &header)?;
-            self.archive.put_body(&mut txn, &header, &body)?;
+            self.archive.append_header(&mut txn, header)?;
+            self.archive.put_body(&mut txn, header, body)?;
             for transaction in &body.transactions {
                 self.mempool.delete(&mut txn, &transaction.txid())?;
             }
@@ -265,7 +318,10 @@ impl<
         Ok(())
     }
 
-    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error<<S as State<A, C>>::Error>> {
+    pub async fn connect(
+        &self,
+        addr: SocketAddr,
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let peer = self.net.connect(addr).await?;
         let peer0 = peer.clone();
         let node0 = self.clone();
@@ -280,7 +336,7 @@ impl<
                 }
             }
         });
-        let peer0 = peer.clone();
+        let peer0 = peer;
         let node0 = self.clone();
         tokio::spawn(async move {
             loop {
@@ -299,7 +355,7 @@ impl<
     pub async fn heart_beat_listen(
         &self,
         peer: &crate::net::Peer,
-    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let message = match peer.connection.read_datagram().await {
             Ok(message) => message,
             Err(err) => {
@@ -321,7 +377,7 @@ impl<
     pub async fn peer_listen(
         &self,
         peer: &crate::net::Peer,
-    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         let (mut send, mut recv) = peer
             .connection
             .accept_bi()
@@ -331,7 +387,7 @@ impl<
             .read_to_end(crate::net::READ_LIMIT)
             .await
             .map_err(crate::net::Error::from)?;
-        let message: Request<A, C> = bincode::deserialize(&data)?;
+        let message: Request<A, CustomTxExtension, CustomTxOutput> = bincode::deserialize(&data)?;
         match message {
             Request::GetBlock { height } => {
                 let (header, body) = {
@@ -358,12 +414,13 @@ impl<
                 };
                 match valid {
                     Err(err) => {
-                        let response = Response::<A, C>::TransactionRejected;
+                        let response =
+                            Response::<A, CustomTxExtension, CustomTxOutput>::TransactionRejected;
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await
                             .map_err(crate::net::Error::from)?;
-                        return Err(err.into());
+                        return Err(err);
                     }
                     Ok(_) => {
                         {
@@ -377,12 +434,13 @@ impl<
                                 continue;
                             }
                             peer0
-                                .request(&Request::<A, C>::PushTransaction {
+                                .request(&Request::<A, CustomTxExtension, CustomTxOutput>::PushTransaction {
                                     transaction: transaction.clone(),
                                 })
                                 .await?;
                         }
-                        let response = Response::<A, C>::TransactionAccepted;
+                        let response =
+                            Response::<A, CustomTxExtension, CustomTxOutput>::TransactionAccepted;
                         let response = bincode::serialize(&response)?;
                         send.write_all(&response)
                             .await
@@ -395,7 +453,9 @@ impl<
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<(), Error<<S as State<A, C>>::Error>> {
+    pub fn run(
+        &mut self,
+    ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         // Listening to connections.
         let node = self.clone();
         tokio::spawn(async move {
@@ -532,32 +592,4 @@ pub enum Error<E: CustomError + Debug + Send + Sync> {
     Bincode(#[from] bincode::Error),
     #[error("custom error")]
     Custom(#[from] E),
-}
-
-pub trait State<A, C>: Sized {
-    type Error: CustomError + Debug + Send + Sync;
-    const NUM_DBS: u32;
-    const THIS_SIDECHAIN: u8;
-    fn new(env: &heed::Env) -> Result<Self, Self::Error>;
-    fn validate_filled_transaction(
-        &self,
-        txn: &RoTxn,
-        height: u32,
-        state: &crate::state::State<A, C>,
-        transaction: &FilledTransaction<C>,
-    ) -> Result<(), Self::Error>;
-    fn validate_body(
-        &self,
-        txn: &RoTxn,
-        height: u32,
-        state: &crate::state::State<A, C>,
-        body: &Body<A, C>,
-    ) -> Result<(), Self::Error>;
-    fn connect_body(
-        &self,
-        txn: &mut RwTxn,
-        height: u32,
-        state: &crate::state::State<A, C>,
-        body: &Body<A, C>,
-    ) -> Result<(), Self::Error>;
 }

@@ -17,7 +17,7 @@ pub use jsonrpsee;
 pub fn format_deposit_address(str_dest: &str) -> String {
     let this_sidechain = 0;
     let deposit_address: String = format!("s{}_{}_", this_sidechain, str_dest);
-    let hash = sha256::digest(deposit_address.as_bytes()).to_string();
+    let hash = sha256::digest(deposit_address.as_bytes());
     let hash: String = hash[..6].into();
     format!("{}{}", deposit_address, hash)
 }

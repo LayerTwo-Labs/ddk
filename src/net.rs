@@ -1,4 +1,6 @@
-use crate::types::{AuthorizedTransaction, Body, Header};
+use crate::types::{
+    AuthorizedTransaction, Body, DefaultCustomTxOutput, DefaultTxExtension, Header,
+};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -35,6 +37,29 @@ pub struct Peer {
     pub connection: Connection,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Request<A, CustomTxExtension = DefaultTxExtension, CustomTxOutput = DefaultCustomTxOutput>
+{
+    GetBlock {
+        height: u32,
+    },
+    PushTransaction {
+        transaction: AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Response<A, CustomTxExtension = DefaultTxExtension, CustomTxOutput = DefaultCustomTxOutput>
+{
+    Block {
+        header: Header,
+        body: Body<A, CustomTxExtension, CustomTxOutput>,
+    },
+    NoBlock,
+    TransactionAccepted,
+    TransactionRejected,
+}
+
 impl Peer {
     pub fn heart_beat(&self, state: &PeerState) -> Result<(), Error> {
         let message = bincode::serialize(state)?;
@@ -42,50 +67,29 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn request<
-        A: Serialize + for<'de> Deserialize<'de>,
-        C: Serialize + for<'de> Deserialize<'de>,
-    >(
+    pub async fn request<A, CustomTxExtension, CustomTxOutput>(
         &self,
-        message: &Request<A, C>,
-    ) -> Result<Response<A, C>, Error> {
+        message: &Request<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<Response<A, CustomTxExtension, CustomTxOutput>, Error>
+    where
+        A: Serialize + for<'de> Deserialize<'de>,
+        CustomTxExtension: Serialize + for<'de> Deserialize<'de>,
+        CustomTxOutput: Serialize + for<'de> Deserialize<'de>,
+    {
         let (mut send, mut recv) = self.connection.open_bi().await?;
         let message = bincode::serialize(message)?;
         send.write_all(&message).await?;
         send.finish().await?;
         let response = recv.read_to_end(READ_LIMIT).await?;
-        let response: Response<A, C> = bincode::deserialize(&response)?;
+        let response: Response<A, CustomTxExtension, CustomTxOutput> =
+            bincode::deserialize(&response)?;
         Ok(response)
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Request<A, C> {
-    GetBlock {
-        height: u32,
-    },
-    PushTransaction {
-        transaction: AuthorizedTransaction<A, C>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Response<A, C> {
-    Block { header: Header, body: Body<A, C> },
-    NoBlock,
-    TransactionAccepted,
-    TransactionRejected,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct PeerState {
     pub block_height: u32,
-}
-
-impl Default for PeerState {
-    fn default() -> Self {
-        Self { block_height: 0 }
-    }
 }
 
 impl Net {

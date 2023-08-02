@@ -1,18 +1,30 @@
-use crate::types::{AuthorizedTransaction, OutPoint, Txid};
+use crate::types::{
+    AuthorizedTransaction, DefaultCustomTxOutput, DefaultTxExtension, OutPoint, Txid,
+};
 use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};
 
+type MemPoolTransactions<A, CustomTxExtension, CustomTxOutput> = Database<
+    OwnedType<[u8; 32]>,
+    SerdeBincode<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
+>;
+
 #[derive(Clone)]
-pub struct MemPool<A, C> {
-    pub transactions: Database<OwnedType<[u8; 32]>, SerdeBincode<AuthorizedTransaction<A, C>>>,
+pub struct MemPool<
+    A,
+    CustomTxExtension = DefaultTxExtension,
+    CustomTxOutput = DefaultCustomTxOutput,
+> {
+    pub transactions: MemPoolTransactions<A, CustomTxExtension, CustomTxOutput>,
     pub spent_utxos: Database<SerdeBincode<OutPoint>, Unit>,
 }
 
-impl<
-        A: Serialize + for<'de> Deserialize<'de> + 'static,
-        C: Serialize + for<'de> Deserialize<'de> + 'static,
-    > MemPool<A, C>
+impl<A, CustomTxExtension, CustomTxOutput> MemPool<A, CustomTxExtension, CustomTxOutput>
+where
+    A: Serialize + for<'de> Deserialize<'de> + 'static,
+    CustomTxExtension: Serialize + for<'de> Deserialize<'de> + 'static,
+    CustomTxOutput: Serialize + for<'de> Deserialize<'de> + 'static,
 {
     pub const NUM_DBS: u32 = 1;
 
@@ -28,7 +40,7 @@ impl<
     pub fn put(
         &self,
         txn: &mut RwTxn,
-        transaction: &AuthorizedTransaction<A, C>,
+        transaction: &AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>,
     ) -> Result<(), Error> {
         println!(
             "adding transaction {} to mempool",
@@ -41,7 +53,7 @@ impl<
             self.spent_utxos.put(txn, input, &())?;
         }
         self.transactions
-            .put(txn, &transaction.transaction.txid().into(), &transaction)?;
+            .put(txn, &transaction.transaction.txid().into(), transaction)?;
         Ok(())
     }
 
@@ -54,7 +66,7 @@ impl<
         &self,
         txn: &RoTxn,
         number: usize,
-    ) -> Result<Vec<AuthorizedTransaction<A, C>>, Error> {
+    ) -> Result<Vec<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>, Error> {
         let mut transactions = vec![];
         for item in self.transactions.iter(txn)?.take(number) {
             let (_, transaction) = item?;
@@ -63,7 +75,10 @@ impl<
         Ok(transactions)
     }
 
-    pub fn take_all(&self, txn: &RoTxn) -> Result<Vec<AuthorizedTransaction<A, C>>, Error> {
+    pub fn take_all(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<Vec<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>, Error> {
         let mut transactions = vec![];
         for item in self.transactions.iter(txn)? {
             let (_, transaction) = item?;
