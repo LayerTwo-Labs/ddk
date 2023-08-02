@@ -5,12 +5,11 @@ mod address;
 mod hashes;
 mod types;
 
-pub use types::*;
 pub use bitcoin;
+pub use blake3;
 pub use bs58;
 pub use serde;
-pub use blake3;
-
+pub use types::*;
 
 /*
 // Replace () with a type (usually an enum) for output data specific for your sidechain.
@@ -41,14 +40,14 @@ pub enum WithdrawalBundleStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WithdrawalBundle<C> {
-    pub spent_utxos: HashMap<types::OutPoint, types::Output<C>>,
+pub struct WithdrawalBundle<CustomTxOutput = DefaultCustomTxOutput> {
+    pub spent_utxos: HashMap<types::OutPoint, types::Output<CustomTxOutput>>,
     pub transaction: bitcoin::Transaction,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TwoWayPegData<C> {
-    pub deposits: HashMap<types::OutPoint, types::Output<C>>,
+pub struct TwoWayPegData<CustomTxOutput = DefaultCustomTxOutput> {
+    pub deposits: HashMap<types::OutPoint, types::Output<CustomTxOutput>>,
     pub deposit_block_hash: Option<bitcoin::BlockHash>,
     pub bundle_statuses: HashMap<bitcoin::Txid, WithdrawalBundleStatus>,
 }
@@ -66,14 +65,17 @@ pub struct DisconnectData {
 */
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct AggregatedWithdrawal<C> {
-    pub spent_utxos: HashMap<OutPoint, types::Output<C>>,
+pub struct AggregatedWithdrawal<CustomTxOutput = DefaultCustomTxOutput> {
+    pub spent_utxos: HashMap<OutPoint, types::Output<CustomTxOutput>>,
     pub main_address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     pub value: u64,
     pub main_fee: u64,
 }
 
-impl<C: std::cmp::Eq> Ord for AggregatedWithdrawal<C> {
+impl<CustomTxOutput> Ord for AggregatedWithdrawal<CustomTxOutput>
+where
+    CustomTxOutput: std::cmp::Eq,
+{
     fn cmp(&self, other: &Self) -> Ordering {
         if self == other {
             Ordering::Equal
@@ -88,7 +90,10 @@ impl<C: std::cmp::Eq> Ord for AggregatedWithdrawal<C> {
     }
 }
 
-impl<C: std::cmp::Eq> PartialOrd for AggregatedWithdrawal<C> {
+impl<CustomTxOutput> PartialOrd for AggregatedWithdrawal<CustomTxOutput>
+where
+    CustomTxOutput: std::cmp::Eq,
+{
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }

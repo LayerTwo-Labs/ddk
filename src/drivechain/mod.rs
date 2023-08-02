@@ -8,13 +8,17 @@ use std::net::SocketAddr;
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Clone)]
-pub struct Drivechain<C> {
+pub struct Drivechain<
+    CustomTxExtension = DefaultTxExtension,
+    CustomTxOutput = DefaultCustomTxOutput,
+> {
     pub sidechain_number: u8,
     pub client: HttpClient,
-    pub _content: PhantomData<C>,
+    pub _content: PhantomData<CustomTxOutput>,
+    pub _tx_extension: PhantomData<CustomTxExtension>,
 }
 
-impl<C> Drivechain<C> {
+impl<CustomTxExtension, CustomTxOutput> Drivechain<CustomTxExtension, CustomTxOutput> {
     pub async fn verify_bmm(&self, header: &Header) -> Result<(), Error> {
         let prev_main_hash = header.prev_main_hash;
         let block_hash = self
@@ -37,7 +41,7 @@ impl<C> Drivechain<C> {
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<TwoWayPegData<C>, Error> {
+    ) -> Result<TwoWayPegData<CustomTxOutput>, Error> {
         let (deposits, deposit_block_hash) = self.get_deposit_outputs(end, start).await?;
         let bundle_statuses = self.get_withdrawal_bundle_statuses().await?;
         let two_way_peg_data = TwoWayPegData {
@@ -65,7 +69,13 @@ impl<C> Drivechain<C> {
         &self,
         end: bitcoin::BlockHash,
         start: Option<bitcoin::BlockHash>,
-    ) -> Result<(HashMap<OutPoint, Output<C>>, Option<bitcoin::BlockHash>), Error> {
+    ) -> Result<
+        (
+            HashMap<OutPoint, Output<CustomTxOutput>>,
+            Option<bitcoin::BlockHash>,
+        ),
+        Error,
+    > {
         let deposits = self
             .client
             .listsidechaindepositsbyblock(self.sidechain_number, Some(end), start)
@@ -141,6 +151,7 @@ impl<C> Drivechain<C> {
             sidechain_number,
             client,
             _content: PhantomData::default(),
+            _tx_extension: PhantomData::default(),
         })
     }
 }

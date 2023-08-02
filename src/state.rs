@@ -9,18 +9,22 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 #[derive(Clone)]
-pub struct State<A, C> {
-    pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
-    pub pending_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
+pub struct State<A, CustomTxExtension = DefaultTxExtension, CustomTxOutput = DefaultCustomTxOutput>
+{
+    pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<CustomTxOutput>>>,
+    pub pending_withdrawal_bundle:
+        Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<CustomTxOutput>>>,
     pub last_withdrawal_bundle_failure_height: Database<OwnedType<u32>, OwnedType<u32>>,
     pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
     pub _body: PhantomData<A>,
+    pub _tx_extension: PhantomData<CustomTxExtension>,
 }
 
-impl<
-        A: crate::types::Verify<C> + GetAddress,
-        C: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
-    > State<A, C>
+impl<A, CustomTxExtension, CustomTxOutput> State<A, CustomTxExtension, CustomTxOutput>
+where
+    A: crate::types::Verify<CustomTxExtension, CustomTxOutput> + GetAddress,
+    CustomTxExtension: Clone + Serialize,
+    CustomTxOutput: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
 {
     pub const NUM_DBS: u32 = 5;
     pub const WITHDRAWAL_BUNDLE_FAILURE_GAP: u32 = 4;
@@ -38,10 +42,14 @@ impl<
             last_withdrawal_bundle_failure_height,
             last_deposit_block,
             _body: PhantomData::default(),
+            _tx_extension: PhantomData::default(),
         })
     }
 
-    pub fn get_utxos(&self, txn: &RoTxn) -> Result<HashMap<OutPoint, Output<C>>, Error> {
+    pub fn get_utxos(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<HashMap<OutPoint, Output<CustomTxOutput>>, Error> {
         let mut utxos = HashMap::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -54,7 +62,7 @@ impl<
         &self,
         txn: &RoTxn,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output<C>>, Error> {
+    ) -> Result<HashMap<OutPoint, Output<CustomTxOutput>>, Error> {
         let mut utxos = HashMap::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -68,8 +76,8 @@ impl<
     pub fn fill_transaction(
         &self,
         txn: &RoTxn,
-        transaction: &Transaction<C>,
-    ) -> Result<FilledTransaction<C>, Error> {
+        transaction: &Transaction<CustomTxExtension, CustomTxOutput>,
+    ) -> Result<FilledTransaction<CustomTxExtension, CustomTxOutput>, Error> {
         let mut spent_utxos = vec![];
         for input in &transaction.inputs {
             let utxo = self
@@ -88,7 +96,7 @@ impl<
         &self,
         txn: &RoTxn,
         block_height: u32,
-    ) -> Result<Option<WithdrawalBundle<C>>, Error> {
+    ) -> Result<Option<WithdrawalBundle<CustomTxOutput>>, Error> {
         use bitcoin::blockdata::{opcodes, script};
         // Weight of a bundle with 0 outputs.
         const BUNDLE_0_WEIGHT: u64 = 504;
@@ -103,7 +111,7 @@ impl<
         // destination -> (value, mainchain fee, spent_utxos)
         let mut address_to_aggregated_withdrawal = HashMap::<
             bitcoin::Address<bitcoin::address::NetworkUnchecked>,
-            AggregatedWithdrawal<C>,
+            AggregatedWithdrawal<CustomTxOutput>,
         >::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -137,7 +145,7 @@ impl<
             address_to_aggregated_withdrawal.into_values().collect();
         aggregated_withdrawals.sort_by_key(|a| std::cmp::Reverse(a.clone()));
         let mut fee = 0;
-        let mut spent_utxos = HashMap::<OutPoint, Output<C>>::new();
+        let mut spent_utxos = HashMap::<OutPoint, Output<CustomTxOutput>>::new();
         let mut bundle_outputs = vec![];
         for aggregated in &aggregated_withdrawals {
             if bundle_outputs.len() > MAX_BUNDLE_OUTPUTS {
@@ -226,13 +234,13 @@ impl<
     pub fn get_pending_withdrawal_bundle(
         &self,
         txn: &RoTxn,
-    ) -> Result<Option<WithdrawalBundle<C>>, Error> {
+    ) -> Result<Option<WithdrawalBundle<CustomTxOutput>>, Error> {
         Ok(self.pending_withdrawal_bundle.get(txn, &0)?)
     }
 
     pub fn validate_filled_transaction(
         &self,
-        transaction: &FilledTransaction<C>,
+        transaction: &FilledTransaction<CustomTxExtension, CustomTxOutput>,
     ) -> Result<u64, Error> {
         let mut value_in: u64 = 0;
         let mut value_out: u64 = 0;
@@ -248,7 +256,11 @@ impl<
         Ok(value_in - value_out)
     }
 
-    pub fn validate_body(&self, txn: &RoTxn, body: &Body<A, C>) -> Result<u64, Error> {
+    pub fn validate_body(
+        &self,
+        txn: &RoTxn,
+        body: &Body<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<u64, Error> {
         let mut coinbase_value: u64 = 0;
         for output in &body.coinbase {
             coinbase_value += output.get_value();
@@ -296,7 +308,7 @@ impl<
     pub fn connect_two_way_peg_data(
         &self,
         txn: &mut RwTxn,
-        two_way_peg_data: &TwoWayPegData<C>,
+        two_way_peg_data: &TwoWayPegData<CustomTxOutput>,
         block_height: u32,
     ) -> Result<(), Error> {
         // Handle deposits.
@@ -349,7 +361,11 @@ impl<
         Ok(())
     }
 
-    pub fn connect_body(&self, txn: &mut RwTxn, body: &Body<A, C>) -> Result<(), Error> {
+    pub fn connect_body(
+        &self,
+        txn: &mut RwTxn,
+        body: &Body<A, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Error> {
         let merkle_root = body.compute_merkle_root();
         for (vout, output) in body.coinbase.iter().enumerate() {
             let outpoint = OutPoint::Coinbase {

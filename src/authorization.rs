@@ -16,42 +16,13 @@ impl GetAddress for Authorization {
     }
 }
 
-impl<C: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync> Verify<C> for Authorization {
-    type Error = Error;
-    fn verify_transaction(transaction: &AuthorizedTransaction<Self, C>) -> Result<(), Self::Error>
-    where
-        Self: Sized,
-    {
-        verify_authorized_transaction(transaction)?;
-        Ok(())
-    }
-
-    fn verify_body(body: &Body<Self, C>) -> Result<(), Self::Error>
-    where
-        Self: Sized,
-    {
-        verify_authorizations(body)?;
-        Ok(())
-    }
-}
-
-pub fn get_address(public_key: &PublicKey) -> Address {
-    let mut hasher = blake3::Hasher::new();
-    let mut reader = hasher.update(&public_key.to_bytes()).finalize_xof();
-    let mut output: [u8; 20] = [0; 20];
-    reader.fill(&mut output);
-    Address(output)
-}
-
-struct Package<'a> {
-    messages: Vec<&'a [u8]>,
-    signatures: Vec<Signature>,
-    public_keys: Vec<PublicKey>,
-}
-
-pub fn verify_authorized_transaction<C: Clone + Serialize + Sync>(
-    transaction: &AuthorizedTransaction<Authorization, C>,
-) -> Result<(), Error> {
+pub fn verify_authorized_transaction<CustomTxExtension, CustomTxOutput>(
+    transaction: &AuthorizedTransaction<Authorization, CustomTxExtension, CustomTxOutput>,
+) -> Result<(), Error>
+where
+    CustomTxExtension: Serialize,
+    CustomTxOutput: Clone + Serialize + Sync,
+{
     let serialized_transaction = bincode::serialize(&transaction.transaction)?;
     let messages: Vec<_> = std::iter::repeat(serialized_transaction.as_slice())
         .take(transaction.authorizations.len())
@@ -70,9 +41,13 @@ pub fn verify_authorized_transaction<C: Clone + Serialize + Sync>(
     Ok(())
 }
 
-pub fn verify_authorizations<C: Clone + Serialize + Sync>(
-    body: &Body<Authorization, C>,
-) -> Result<(), Error> {
+pub fn verify_authorizations<CustomTxExtension, CustomTxOutput>(
+    body: &Body<Authorization, CustomTxExtension, CustomTxOutput>,
+) -> Result<(), Error>
+where
+    CustomTxExtension: Serialize + Sync,
+    CustomTxOutput: Clone + Serialize + Sync,
+{
     let input_numbers = body
         .transactions
         .iter()
@@ -132,6 +107,45 @@ pub fn verify_authorizations<C: Clone + Serialize + Sync>(
         )
         .collect::<Result<(), SignatureError>>()?;
     Ok(())
+}
+
+impl<CustomTxExtension, CustomTxOutput> Verify<CustomTxExtension, CustomTxOutput> for Authorization
+where
+    CustomTxExtension: Serialize + Send + Sync,
+    CustomTxOutput: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+{
+    type Error = Error;
+    fn verify_transaction(
+        transaction: &AuthorizedTransaction<Self, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Self::Error>
+    where
+        Self: Sized,
+    {
+        verify_authorized_transaction(transaction)?;
+        Ok(())
+    }
+
+    fn verify_body(body: &Body<Self, CustomTxExtension, CustomTxOutput>) -> Result<(), Self::Error>
+    where
+        Self: Sized,
+    {
+        verify_authorizations(body)?;
+        Ok(())
+    }
+}
+
+pub fn get_address(public_key: &PublicKey) -> Address {
+    let mut hasher = blake3::Hasher::new();
+    let mut reader = hasher.update(&public_key.to_bytes()).finalize_xof();
+    let mut output: [u8; 20] = [0; 20];
+    reader.fill(&mut output);
+    Address(output)
+}
+
+struct Package<'a> {
+    messages: Vec<&'a [u8]>,
+    signatures: Vec<Signature>,
+    public_keys: Vec<PublicKey>,
 }
 
 pub fn sign<C: Clone + Serialize>(

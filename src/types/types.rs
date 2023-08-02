@@ -3,6 +3,10 @@ pub use crate::types::hashes::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// remove once ! is stabilized
+// see tracking issue: https://github.com/rust-lang/rust/issues/35121
+use never_type::Never;
+
 #[derive(Hash, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutPoint {
     // Created by transactions.
@@ -23,21 +27,36 @@ impl std::fmt::Display for OutPoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Output<C> {
-    pub address: Address,
-    pub content: Content<C>,
+/// The default custom tx output.
+/// The `Never` type is used to express that
+/// the custom output variant is not used by default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultCustomTxOutput(pub Never);
+
+impl Serialize for DefaultCustomTxOutput {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_unit_struct("DefaultCustomTxOutput")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Content<C> {
-    Custom(C),
+pub enum Content<CustomTxOutput = DefaultCustomTxOutput> {
+    Custom(CustomTxOutput),
     Value(u64),
     Withdrawal {
         value: u64,
         main_fee: u64,
         main_address: bitcoin::Address<bitcoin::address::NetworkUnchecked>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Output<C> {
+    pub address: Address,
+    pub content: Content<C>,
 }
 
 impl<C> Content<C> {
@@ -77,25 +96,44 @@ impl<C: GetValue> GetValue for Content<C> {
     }
 }
 
+/// The default tx extension
+pub(crate) type DefaultTxExtension = ();
+
+/// `CustomTxExtension` is used to add custom data to a transaction.
+/// `CustomTxOutput` is used to add support for custom output kinds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transaction<C> {
+pub struct Transaction<
+    CustomTxExtension = DefaultTxExtension,
+    CustomTxOutput = DefaultCustomTxOutput,
+> {
     pub inputs: Vec<OutPoint>,
-    pub outputs: Vec<Output<C>>,
+    pub outputs: Vec<Output<CustomTxOutput>>,
+    pub extension: CustomTxExtension,
 }
 
-impl<C: Serialize> Transaction<C> {
+impl<CustomTxExtension, CustomTxOutput> Transaction<CustomTxExtension, CustomTxOutput>
+where
+    CustomTxExtension: Serialize,
+    CustomTxOutput: Serialize,
+{
     pub fn txid(&self) -> Txid {
         hash(self).into()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FilledTransaction<C> {
-    pub transaction: Transaction<C>,
-    pub spent_utxos: Vec<Output<C>>,
+pub struct FilledTransaction<
+    CustomTxExtension = DefaultTxExtension,
+    CustomTxOutput = DefaultCustomTxOutput,
+> {
+    pub transaction: Transaction<CustomTxExtension, CustomTxOutput>,
+    pub spent_utxos: Vec<Output<CustomTxOutput>>,
 }
 
-impl<C: GetValue> FilledTransaction<C> {
+impl<CustomTxExtension, CustomTxOutput> FilledTransaction<CustomTxExtension, CustomTxOutput>
+where
+    CustomTxOutput: GetValue,
+{
     pub fn get_value_in(&self) -> u64 {
         self.spent_utxos.iter().map(GetValue::get_value).sum()
     }
@@ -120,23 +158,31 @@ impl<C: GetValue> FilledTransaction<C> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthorizedTransaction<A, C> {
-    pub transaction: Transaction<C>,
+pub struct AuthorizedTransaction<
+    A,
+    CustomTxExtension = DefaultTxExtension,
+    CustomTxOutput = DefaultCustomTxOutput,
+> {
+    pub transaction: Transaction<CustomTxExtension, CustomTxOutput>,
     /// Authorization is called witness in Bitcoin.
     pub authorizations: Vec<A>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Body<A, C> {
-    pub coinbase: Vec<Output<C>>,
-    pub transactions: Vec<Transaction<C>>,
+pub struct Body<A, CustomTxExtension = DefaultTxExtension, CustomTxOutput = DefaultCustomTxOutput> {
+    pub coinbase: Vec<Output<CustomTxOutput>>,
+    pub transactions: Vec<Transaction<CustomTxExtension, CustomTxOutput>>,
     pub authorizations: Vec<A>,
 }
 
-impl<A, C: Clone + GetValue + Serialize> Body<A, C> {
+impl<A, CustomTxExtension, CustomTxOutput> Body<A, CustomTxExtension, CustomTxOutput>
+where
+    CustomTxExtension: Serialize,
+    CustomTxOutput: Clone + GetValue + Serialize,
+{
     pub fn new(
-        authorized_transactions: Vec<AuthorizedTransaction<A, C>>,
-        coinbase: Vec<Output<C>>,
+        authorized_transactions: Vec<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
+        coinbase: Vec<Output<CustomTxOutput>>,
     ) -> Self {
         let mut authorizations = Vec::with_capacity(
             authorized_transactions
@@ -169,7 +215,7 @@ impl<A, C: Clone + GetValue + Serialize> Body<A, C> {
             .collect()
     }
 
-    pub fn get_outputs(&self) -> HashMap<OutPoint, Output<C>> {
+    pub fn get_outputs(&self) -> HashMap<OutPoint, Output<CustomTxOutput>> {
         let mut outputs = HashMap::new();
         let merkle_root = self.compute_merkle_root();
         for (vout, output) in self.coinbase.iter().enumerate() {
@@ -207,12 +253,20 @@ impl GetValue for () {
     }
 }
 
-pub trait Verify<C> {
+impl GetValue for Never {
+    fn get_value(&self) -> u64 {
+        0
+    }
+}
+
+pub trait Verify<CustomTxExtension, CustomTxOutput> {
     type Error;
-    fn verify_transaction(transaction: &AuthorizedTransaction<Self, C>) -> Result<(), Self::Error>
+    fn verify_transaction(
+        transaction: &AuthorizedTransaction<Self, CustomTxExtension, CustomTxOutput>,
+    ) -> Result<(), Self::Error>
     where
         Self: Sized;
-    fn verify_body(body: &Body<Self, C>) -> Result<(), Self::Error>
+    fn verify_body(body: &Body<Self, CustomTxExtension, CustomTxOutput>) -> Result<(), Self::Error>
     where
         Self: Sized;
 }
