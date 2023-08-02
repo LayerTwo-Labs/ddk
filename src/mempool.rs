@@ -5,16 +5,18 @@ use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};
 
+type MemPoolTransactions<A, CustomTxExtension, CustomTxOutput> = Database<
+    OwnedType<[u8; 32]>,
+    SerdeBincode<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
+>;
+
 #[derive(Clone)]
 pub struct MemPool<
     A,
     CustomTxExtension = DefaultTxExtension,
     CustomTxOutput = DefaultCustomTxOutput,
 > {
-    pub transactions: Database<
-        OwnedType<[u8; 32]>,
-        SerdeBincode<AuthorizedTransaction<A, CustomTxExtension, CustomTxOutput>>,
-    >,
+    pub transactions: MemPoolTransactions<A, CustomTxExtension, CustomTxOutput>,
     pub spent_utxos: Database<SerdeBincode<OutPoint>, Unit>,
 }
 
@@ -51,7 +53,7 @@ where
             self.spent_utxos.put(txn, input, &())?;
         }
         self.transactions
-            .put(txn, &transaction.transaction.txid().into(), &transaction)?;
+            .put(txn, &transaction.transaction.txid().into(), transaction)?;
         Ok(())
     }
 

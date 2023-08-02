@@ -146,7 +146,7 @@ where
         if A::verify_transaction(transaction).is_err() {
             return Err(crate::state::Error::AuthorizationError.into());
         }
-        let height = self.archive.get_height(&txn)?;
+        let height = self.archive.get_height(txn)?;
         self.custom_state.validate_filled_transaction(
             txn,
             height,
@@ -165,8 +165,8 @@ where
     ) -> Result<(), Error<<S as State<A, CustomTxExtension, CustomTxOutput>>::Error>> {
         {
             let mut txn = self.env.write_txn()?;
-            self.validate_transaction(&txn, &transaction)?;
-            self.mempool.put(&mut txn, &transaction)?;
+            self.validate_transaction(&txn, transaction)?;
+            self.mempool.put(&mut txn, transaction)?;
             txn.commit()?;
         }
         for peer in self.net.peers.read().await.values() {
@@ -291,18 +291,18 @@ where
                 .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
                 .await?;
             let mut txn = self.env.write_txn()?;
-            self.state.validate_body(&txn, &body)?;
+            self.state.validate_body(&txn, body)?;
             let height = self.archive.get_height(&txn)?;
             self.custom_state
-                .validate_body(&txn, height, &self.state, &body)?;
-            self.state.connect_body(&mut txn, &body)?;
+                .validate_body(&txn, height, &self.state, body)?;
+            self.state.connect_body(&mut txn, body)?;
             self.custom_state
-                .connect_body(&mut txn, height, &self.state, &body)?;
+                .connect_body(&mut txn, height, &self.state, body)?;
             self.state
                 .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
             let bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
-            self.archive.append_header(&mut txn, &header)?;
-            self.archive.put_body(&mut txn, &header, &body)?;
+            self.archive.append_header(&mut txn, header)?;
+            self.archive.put_body(&mut txn, header, body)?;
             for transaction in &body.transactions {
                 self.mempool.delete(&mut txn, &transaction.txid())?;
             }
@@ -336,7 +336,7 @@ where
                 }
             }
         });
-        let peer0 = peer.clone();
+        let peer0 = peer;
         let node0 = self.clone();
         tokio::spawn(async move {
             loop {
@@ -420,7 +420,7 @@ where
                         send.write_all(&response)
                             .await
                             .map_err(crate::net::Error::from)?;
-                        return Err(err.into());
+                        return Err(err);
                     }
                     Ok(_) => {
                         {

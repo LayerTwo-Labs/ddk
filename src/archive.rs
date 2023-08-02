@@ -5,6 +5,9 @@ use heed::types::*;
 use heed::{Database, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};
 
+type ArchiveBodies<A, CustomTxExtension, CustomTxOutput> =
+    Database<OwnedType<[u8; 4]>, SerdeBincode<Body<A, CustomTxExtension, CustomTxOutput>>>;
+
 #[derive(Clone)]
 pub struct Archive<
     A,
@@ -13,7 +16,7 @@ pub struct Archive<
 > {
     // Block height to header.
     headers: Database<OwnedType<[u8; 4]>, SerdeBincode<Header>>,
-    bodies: Database<OwnedType<[u8; 4]>, SerdeBincode<Body<A, CustomTxExtension, CustomTxOutput>>>,
+    bodies: ArchiveBodies<A, CustomTxExtension, CustomTxOutput>,
     hash_to_height: Database<OwnedType<[u8; 32]>, OwnedType<[u8; 4]>>,
 }
 
