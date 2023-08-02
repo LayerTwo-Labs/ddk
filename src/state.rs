@@ -11,15 +11,24 @@ use std::marker::PhantomData;
 #[derive(Clone)]
 pub struct State<A, C> {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
-    pub pending_withdrawal_bundle: Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
-    pub last_withdrawal_bundle_failure_height: Database<OwnedType<u32>, OwnedType<u32>>,
-    pub last_deposit_block: Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
+    pub pending_withdrawal_bundle:
+        Database<OwnedType<u32>, SerdeBincode<WithdrawalBundle<C>>>,
+    pub last_withdrawal_bundle_failure_height:
+        Database<OwnedType<u32>, OwnedType<u32>>,
+    pub last_deposit_block:
+        Database<OwnedType<u32>, SerdeBincode<bitcoin::BlockHash>>,
     pub _body: PhantomData<A>,
 }
 
 impl<
         A: crate::types::Verify<C> + GetAddress,
-        C: GetValue + Debug + Clone + Eq + Serialize + for<'de> Deserialize<'de> + 'static,
+        C: GetValue
+            + Debug
+            + Clone
+            + Eq
+            + Serialize
+            + for<'de> Deserialize<'de>
+            + 'static,
     > State<A, C>
 {
     pub const NUM_DBS: u32 = 5;
@@ -28,10 +37,12 @@ impl<
     pub fn new(env: &heed::Env) -> Result<Self, Error> {
         let utxos = env.create_database(Some("utxos"))?;
 
-        let pending_withdrawal_bundle = env.create_database(Some("pending_withdrawal_bundle"))?;
+        let pending_withdrawal_bundle =
+            env.create_database(Some("pending_withdrawal_bundle"))?;
         let last_withdrawal_bundle_failure_height =
             env.create_database(Some("last_withdrawal_bundle_failure_height"))?;
-        let last_deposit_block = env.create_database(Some("last_deposit_block"))?;
+        let last_deposit_block =
+            env.create_database(Some("last_deposit_block"))?;
         Ok(Self {
             utxos,
             pending_withdrawal_bundle,
@@ -41,7 +52,10 @@ impl<
         })
     }
 
-    pub fn get_utxos(&self, txn: &RoTxn) -> Result<HashMap<OutPoint, Output<C>>, Error> {
+    pub fn get_utxos(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<HashMap<OutPoint, Output<C>>, Error> {
         let mut utxos = HashMap::new();
         for item in self.utxos.iter(txn)? {
             let (outpoint, output) = item?;
@@ -95,9 +109,9 @@ impl<
         // Weight of a single output.
         const OUTPUT_WEIGHT: u64 = 128;
         // Turns out to be 3121.
-        const MAX_BUNDLE_OUTPUTS: usize = ((bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64
-            - BUNDLE_0_WEIGHT)
-            / OUTPUT_WEIGHT) as usize;
+        const MAX_BUNDLE_OUTPUTS: usize =
+            ((bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64 - BUNDLE_0_WEIGHT)
+                / OUTPUT_WEIGHT) as usize;
 
         // Aggregate all outputs by destination.
         // destination -> (value, mainchain fee, spent_utxos)
@@ -211,7 +225,9 @@ impl<
             ]
             .concat(),
         };
-        if transaction.weight().to_wu() > bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64 {
+        if transaction.weight().to_wu()
+            > bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64
+        {
             Err(Error::BundleTooHeavy {
                 weight: transaction.weight().to_wu(),
                 max_weight: bitcoin::policy::MAX_STANDARD_TX_WEIGHT as u64,
@@ -248,7 +264,11 @@ impl<
         Ok(value_in - value_out)
     }
 
-    pub fn validate_body(&self, txn: &RoTxn, body: &Body<A, C>) -> Result<u64, Error> {
+    pub fn validate_body(
+        &self,
+        txn: &RoTxn,
+        body: &Body<A, C>,
+    ) -> Result<u64, Error> {
         let mut coinbase_value: u64 = 0;
         for output in &body.coinbase {
             coinbase_value += output.get_value();
@@ -267,7 +287,8 @@ impl<
                 }
                 spent_utxos.insert(*input);
             }
-            total_fees += self.validate_filled_transaction(filled_transaction)?;
+            total_fees +=
+                self.validate_filled_transaction(filled_transaction)?;
         }
         if coinbase_value > total_fees {
             return Err(Error::NotEnoughFees);
@@ -275,7 +296,9 @@ impl<
         let spent_utxos = filled_transactions
             .iter()
             .flat_map(|t| t.spent_utxos.iter());
-        for (authorization, spent_utxo) in body.authorizations.iter().zip(spent_utxos) {
+        for (authorization, spent_utxo) in
+            body.authorizations.iter().zip(spent_utxos)
+        {
             if authorization.get_address() != spent_utxo.address {
                 return Err(Error::WrongPubKeyForAddress);
             }
@@ -316,7 +339,9 @@ impl<
             > Self::WITHDRAWAL_BUNDLE_FAILURE_GAP
             && self.pending_withdrawal_bundle.get(txn, &0)?.is_none()
         {
-            if let Some(bundle) = self.collect_withdrawal_bundle(txn, block_height + 1)? {
+            if let Some(bundle) =
+                self.collect_withdrawal_bundle(txn, block_height + 1)?
+            {
                 for outpoint in bundle.spent_utxos.keys() {
                     self.utxos.delete(txn, outpoint)?;
                 }
@@ -349,7 +374,11 @@ impl<
         Ok(())
     }
 
-    pub fn connect_body(&self, txn: &mut RwTxn, body: &Body<A, C>) -> Result<(), Error> {
+    pub fn connect_body(
+        &self,
+        txn: &mut RwTxn,
+        body: &Body<A, C>,
+    ) -> Result<(), Error> {
         let merkle_root = body.compute_merkle_root();
         for (vout, output) in body.coinbase.iter().enumerate() {
             let outpoint = OutPoint::Coinbase {

@@ -74,13 +74,19 @@ pub trait Main {
         nsidechain: u8,
     ) -> Result<Vec<WithdrawalStatus>, jsonrpsee::core::Error>;
     #[method(name = "listspentwithdrawals")]
-    async fn listspentwithdrawals(&self) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
+    async fn listspentwithdrawals(
+        &self,
+    ) -> Result<Vec<SpentWithdrawal>, jsonrpsee::core::Error>;
     #[method(name = "listfailedwithdrawals")]
-    async fn listfailedwithdrawals(&self) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
+    async fn listfailedwithdrawals(
+        &self,
+    ) -> Result<Vec<FailedWithdrawal>, jsonrpsee::core::Error>;
     #[method(name = "getblockcount")]
     async fn getblockcount(&self) -> Result<usize, jsonrpsee::core::Error>;
     #[method(name = "getbestblockhash")]
-    async fn getbestblockhash(&self) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
+    async fn getbestblockhash(
+        &self,
+    ) -> Result<bitcoin::BlockHash, jsonrpsee::core::Error>;
     #[method(name = "getblock")]
     async fn getblock(
         &self,
@@ -121,14 +127,20 @@ pub trait Main {
     ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     #[method(name = "generate")]
-    async fn generate(&self, num: u32) -> Result<serde_json::Value, jsonrpsee::core::Error>;
+    async fn generate(
+        &self,
+        num: u32,
+    ) -> Result<serde_json::Value, jsonrpsee::core::Error>;
 
     #[method(name = "getnewaddress")]
     async fn getnewaddress(
         &self,
         account: &str,
         address_type: &str,
-    ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, jsonrpsee::core::Error>;
+    ) -> Result<
+        bitcoin::Address<bitcoin::address::NetworkUnchecked>,
+        jsonrpsee::core::Error,
+    >;
 
     #[method(name = "createsidechaindeposit")]
     async fn createsidechaindeposit(

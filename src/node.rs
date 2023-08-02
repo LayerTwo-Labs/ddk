@@ -64,8 +64,10 @@ impl<
         let state = crate::state::State::new(&env)?;
         let archive = crate::archive::Archive::new(&env)?;
         let mempool = crate::mempool::MemPool::new(&env)?;
-        let drivechain =
-            crate::drivechain::Drivechain::new(<S as State<A, C>>::THIS_SIDECHAIN, main_addr)?;
+        let drivechain = crate::drivechain::Drivechain::new(
+            <S as State<A, C>>::THIS_SIDECHAIN,
+            main_addr,
+        )?;
         let net = crate::net::Net::new(bind_addr)?;
         let custom_state = State::new(&env)?;
         Ok(Self {
@@ -96,7 +98,8 @@ impl<
         txn: &RoTxn,
         transaction: &AuthorizedTransaction<A, C>,
     ) -> Result<u64, Error<<S as State<A, C>>::Error>> {
-        let filled_transaction = self.state.fill_transaction(txn, &transaction.transaction)?;
+        let filled_transaction =
+            self.state.fill_transaction(txn, &transaction.transaction)?;
         for (authorization, spent_utxo) in transaction
             .authorizations
             .iter()
@@ -158,7 +161,8 @@ impl<
     pub fn get_utxos_by_addresses(
         &self,
         addresses: &HashSet<Address>,
-    ) -> Result<HashMap<OutPoint, Output<C>>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<HashMap<OutPoint, Output<C>>, Error<<S as State<A, C>>::Error>>
+    {
         let txn = self.env.read_txn()?;
         let utxos = self.state.get_utxos_by_addresses(&txn, addresses)?;
         Ok(utxos)
@@ -175,14 +179,18 @@ impl<
     pub fn get_transactions(
         &self,
         number: usize,
-    ) -> Result<(Vec<AuthorizedTransaction<A, C>>, u64), Error<<S as State<A, C>>::Error>> {
+    ) -> Result<
+        (Vec<AuthorizedTransaction<A, C>>, u64),
+        Error<<S as State<A, C>>::Error>,
+    > {
         let mut txn = self.env.write_txn()?;
         let transactions = self.mempool.take(&txn, number)?;
         let mut fee: u64 = 0;
         let mut returned_transactions = vec![];
         let mut spent_utxos = HashSet::new();
         for transaction in &transactions {
-            let inputs: HashSet<_> = transaction.transaction.inputs.iter().copied().collect();
+            let inputs: HashSet<_> =
+                transaction.transaction.inputs.iter().copied().collect();
             if !spent_utxos.is_disjoint(&inputs) {
                 println!("UTXO double spent");
                 self.mempool
@@ -218,7 +226,8 @@ impl<
 
     pub fn get_pending_withdrawal_bundle(
         &self,
-    ) -> Result<Option<WithdrawalBundle<C>>, Error<<S as State<A, C>>::Error>> {
+    ) -> Result<Option<WithdrawalBundle<C>>, Error<<S as State<A, C>>::Error>>
+    {
         let txn = self.env.read_txn()?;
         Ok(self.state.get_pending_withdrawal_bundle(&txn)?)
     }
@@ -235,18 +244,32 @@ impl<
         let bundle = {
             let two_way_peg_data = self
                 .drivechain
-                .get_two_way_peg_data(header.prev_main_hash, last_deposit_block_hash)
+                .get_two_way_peg_data(
+                    header.prev_main_hash,
+                    last_deposit_block_hash,
+                )
                 .await?;
             let mut txn = self.env.write_txn()?;
             self.state.validate_body(&txn, &body)?;
             let height = self.archive.get_height(&txn)?;
-            self.custom_state
-                .validate_body(&txn, height, &self.state, &body)?;
+            self.custom_state.validate_body(
+                &txn,
+                height,
+                &self.state,
+                &body,
+            )?;
             self.state.connect_body(&mut txn, &body)?;
-            self.custom_state
-                .connect_body(&mut txn, height, &self.state, &body)?;
-            self.state
-                .connect_two_way_peg_data(&mut txn, &two_way_peg_data, height)?;
+            self.custom_state.connect_body(
+                &mut txn,
+                height,
+                &self.state,
+                &body,
+            )?;
+            self.state.connect_two_way_peg_data(
+                &mut txn,
+                &two_way_peg_data,
+                height,
+            )?;
             let bundle = self.state.get_pending_withdrawal_bundle(&txn)?;
             self.archive.append_header(&mut txn, &header)?;
             self.archive.put_body(&mut txn, &header, &body)?;
@@ -265,7 +288,10 @@ impl<
         Ok(())
     }
 
-    pub async fn connect(&self, addr: SocketAddr) -> Result<(), Error<<S as State<A, C>>::Error>> {
+    pub async fn connect(
+        &self,
+        addr: SocketAddr,
+    ) -> Result<(), Error<<S as State<A, C>>::Error>> {
         let peer = self.net.connect(addr).await?;
         let peer0 = peer.clone();
         let node0 = self.clone();
@@ -342,7 +368,9 @@ impl<
                     )
                 };
                 let response = match (header, body) {
-                    (Some(header), Some(body)) => Response::Block { header, body },
+                    (Some(header), Some(body)) => {
+                        Response::Block { header, body }
+                    }
                     (_, _) => Response::NoBlock,
                 };
                 let response = bincode::serialize(&response)?;
@@ -368,12 +396,17 @@ impl<
                     Ok(_) => {
                         {
                             let mut txn = self.env.write_txn()?;
-                            println!("adding transaction to mempool: {:?}", &transaction);
+                            println!(
+                                "adding transaction to mempool: {:?}",
+                                &transaction
+                            );
                             self.mempool.put(&mut txn, &transaction)?;
                             txn.commit()?;
                         }
                         for peer0 in self.net.peers.read().await.values() {
-                            if peer0.connection.stable_id() == peer.connection.stable_id() {
+                            if peer0.connection.stable_id()
+                                == peer.connection.stable_id()
+                            {
                                 continue;
                             }
                             peer0
@@ -403,13 +436,17 @@ impl<
                 let incoming_conn = node.net.server.accept().await.unwrap();
                 let connection = incoming_conn.await.unwrap();
                 for peer in node.net.peers.read().await.values() {
-                    if peer.connection.remote_address() == connection.remote_address() {
+                    if peer.connection.remote_address()
+                        == connection.remote_address()
+                    {
                         println!(
                             "already connected to {} refusing duplicate connection",
                             connection.remote_address()
                         );
-                        connection
-                            .close(crate::net::quinn::VarInt::from_u32(1), b"already connected");
+                        connection.close(
+                            crate::net::quinn::VarInt::from_u32(1),
+                            b"already connected",
+                        );
                     }
                 }
                 if connection.close_reason().is_some() {
@@ -486,13 +523,17 @@ impl<
                         };
                         if state.block_height > height {
                             let response = peer
-                                .request(&Request::GetBlock { height: height + 1 })
+                                .request(&Request::GetBlock {
+                                    height: height + 1,
+                                })
                                 .await
                                 .unwrap();
                             match response {
                                 Response::Block { header, body } => {
                                     println!("got new header {:?}", &header);
-                                    node.submit_block(&header, &body).await.unwrap();
+                                    node.submit_block(&header, &body)
+                                        .await
+                                        .unwrap();
                                 }
                                 Response::NoBlock => {}
                                 Response::TransactionAccepted => {}

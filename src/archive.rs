@@ -31,13 +31,21 @@ impl<
         })
     }
 
-    pub fn get_header(&self, txn: &RoTxn, height: u32) -> Result<Option<Header>, Error> {
+    pub fn get_header(
+        &self,
+        txn: &RoTxn,
+        height: u32,
+    ) -> Result<Option<Header>, Error> {
         let height = height.to_be_bytes();
         let header = self.headers.get(txn, &height)?;
         Ok(header)
     }
 
-    pub fn get_body(&self, txn: &RoTxn, height: u32) -> Result<Option<Body<A, C>>, Error> {
+    pub fn get_body(
+        &self,
+        txn: &RoTxn,
+        height: u32,
+    ) -> Result<Option<Body<A, C>>, Error> {
         let height = height.to_be_bytes();
         let header = self.bodies.get(txn, &height)?;
         Ok(header)
@@ -77,7 +85,11 @@ impl<
         Ok(())
     }
 
-    pub fn append_header(&self, txn: &mut RwTxn, header: &Header) -> Result<(), Error> {
+    pub fn append_header(
+        &self,
+        txn: &mut RwTxn,
+        header: &Header,
+    ) -> Result<(), Error> {
         let height = self.get_height(txn)?;
         let best_hash = self.get_best_hash(txn)?;
         if header.prev_side_hash != best_hash {

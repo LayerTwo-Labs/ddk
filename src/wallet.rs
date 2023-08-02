@@ -1,6 +1,7 @@
 pub use crate::authorization::{get_address, Authorization};
 use crate::types::{
-    bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output, Transaction,
+    bitcoin, Address, AuthorizedTransaction, GetValue, OutPoint, Output,
+    Transaction,
 };
 use byteorder::{BigEndian, ByteOrder};
 use ed25519_dalek_bip32::*;
@@ -20,7 +21,9 @@ pub struct Wallet<C> {
     pub utxos: Database<SerdeBincode<OutPoint>, SerdeBincode<Output<C>>>,
 }
 
-impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wallet<C> {
+impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static>
+    Wallet<C>
+{
     pub const NUM_DBS: u32 = 5;
 
     pub fn new(path: &Path) -> Result<Self, Error> {
@@ -106,7 +109,10 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         Ok(Transaction { inputs, outputs })
     }
 
-    pub fn select_coins(&self, value: u64) -> Result<(u64, HashMap<OutPoint, Output<C>>), Error> {
+    pub fn select_coins(
+        &self,
+        value: u64,
+    ) -> Result<(u64, HashMap<OutPoint, Output<C>>), Error> {
         let txn = self.env.read_txn()?;
         let mut utxos = vec![];
         for item in self.utxos.iter(&txn)? {
@@ -141,7 +147,10 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         Ok(())
     }
 
-    pub fn put_utxos(&self, utxos: &HashMap<OutPoint, Output<C>>) -> Result<(), Error> {
+    pub fn put_utxos(
+        &self,
+        utxos: &HashMap<OutPoint, Output<C>>,
+    ) -> Result<(), Error> {
         let mut txn = self.env.write_txn()?;
         for (outpoint, output) in utxos {
             self.utxos.put(&mut txn, outpoint, output)?;
@@ -187,13 +196,14 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         let txn = self.env.read_txn()?;
         let mut authorizations = vec![];
         for input in &transaction.inputs {
-            let spent_utxo = self.utxos.get(&txn, input)?.ok_or(Error::NoUtxo)?;
+            let spent_utxo =
+                self.utxos.get(&txn, input)?.ok_or(Error::NoUtxo)?;
             let index = self
                 .address_to_index
                 .get(&txn, &spent_utxo.address)?
                 .ok_or(Error::NoIndex {
-                    address: spent_utxo.address,
-                })?;
+                address: spent_utxo.address,
+            })?;
             let index = BigEndian::read_u32(&index);
             let keypair = self.get_keypair(&txn, index)?;
             let signature = crate::authorization::sign(&keypair, &transaction)?;
@@ -235,7 +245,11 @@ impl<C: GetValue + Clone + Serialize + for<'de> Deserialize<'de> + 'static> Wall
         Ok(last_index)
     }
 
-    fn get_keypair(&self, txn: &RoTxn, index: u32) -> Result<ed25519_dalek::Keypair, Error> {
+    fn get_keypair(
+        &self,
+        txn: &RoTxn,
+        index: u32,
+    ) -> Result<ed25519_dalek::Keypair, Error> {
         let seed = self.seed.get(txn, &0)?.ok_or(Error::NoSeed)?;
         let xpriv = ExtendedSecretKey::from_seed(&seed)?;
         let derivation_path = DerivationPath::new([
