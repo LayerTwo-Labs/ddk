@@ -164,6 +164,14 @@ impl<
         Ok(utxos)
     }
 
+    pub fn get_all_transactions(
+        &self,
+    ) -> Result<Vec<AuthorizedTransaction<A, C>>, Error<<S as State<A, C>>::Error>> {
+        let txn = self.env.read_txn()?;
+        let transactions = self.mempool.take_all(&txn)?;
+        Ok(transactions)
+    }
+
     pub fn get_transactions(
         &self,
         number: usize,

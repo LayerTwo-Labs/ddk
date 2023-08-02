@@ -62,6 +62,15 @@ impl<
         }
         Ok(transactions)
     }
+
+    pub fn take_all(&self, txn: &RoTxn) -> Result<Vec<AuthorizedTransaction<A, C>>, Error> {
+        let mut transactions = vec![];
+        for item in self.transactions.iter(txn)? {
+            let (_, transaction) = item?;
+            transactions.push(transaction);
+        }
+        Ok(transactions)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
