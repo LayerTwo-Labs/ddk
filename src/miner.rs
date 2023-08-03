@@ -15,8 +15,13 @@ pub struct Miner<A, C> {
 }
 
 impl<A: Clone, C: Clone + GetValue + Serialize> Miner<A, C> {
-    pub fn new(sidechain_number: u8, main_addr: SocketAddr) -> Result<Self, Error> {
-        let drivechain = Drivechain::new(sidechain_number, main_addr)?;
+    pub fn new(
+        sidechain_number: u8,
+        main_addr: SocketAddr,
+        user: &str,
+        password: &str,
+    ) -> Result<Self, Error> {
+        let drivechain = Drivechain::new(sidechain_number, main_addr, user, password)?;
         Ok(Self {
             drivechain,
             sidechain_number,

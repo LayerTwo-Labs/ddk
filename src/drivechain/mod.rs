@@ -125,9 +125,14 @@ impl<C> Drivechain<C> {
         Ok(statuses)
     }
 
-    pub fn new(sidechain_number: u8, main_addr: SocketAddr) -> Result<Self, Error> {
+    pub fn new(
+        sidechain_number: u8,
+        main_addr: SocketAddr,
+        user: &str,
+        password: &str,
+    ) -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
-        let auth = format!("{}:{}", "user", "password");
+        let auth = format!("{user}:{password}");
         let header_value = format!(
             "Basic {}",
             base64::engine::general_purpose::STANDARD_NO_PAD.encode(auth)
