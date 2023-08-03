@@ -164,6 +164,22 @@ impl<
         Ok(utxos)
     }
 
+    pub fn get_header(
+        &self,
+        height: u32,
+    ) -> Result<Option<Header>, Error<<S as State<A, C>>::Error>> {
+        let txn = self.env.read_txn()?;
+        Ok(self.archive.get_header(&txn, height)?)
+    }
+
+    pub fn get_body(
+        &self,
+        height: u32,
+    ) -> Result<Option<Body<A, C>>, Error<<S as State<A, C>>::Error>> {
+        let txn = self.env.read_txn()?;
+        Ok(self.archive.get_body(&txn, height)?)
+    }
+
     pub fn get_all_transactions(
         &self,
     ) -> Result<Vec<AuthorizedTransaction<A, C>>, Error<<S as State<A, C>>::Error>> {
